@@ -7,22 +7,22 @@
   "field_order": [
     "is_enabled",
     "sb_connection",
-    "template_api_url",
-    "template_api_token",
+    "unicommerce_api_url",
+    "unicommerce_api_token",
     "sb_defaults",
-    "template_company",
-    "template_default_warehouse",
-    "template_price_list",
+    "unicommerce_company",
+    "unicommerce_default_warehouse",
+    "unicommerce_price_list",
     "sb_schedule",
-    "template_pull_sync_interval",
-    "template_push_sync_interval"
+    "unicommerce_pull_sync_interval",
+    "unicommerce_push_sync_interval"
   ],
   "fields": [
     {
       "default": "0",
       "fieldname": "is_enabled",
       "fieldtype": "Check",
-      "label": "Enable Template"
+      "label": "Enable Unicommerce"
     },
     {
       "fieldname": "sb_connection",
@@ -31,14 +31,14 @@
     },
     {
       "description": "Base URL of the external API, e.g. https://api.example.com/v1",
-      "fieldname": "template_api_url",
+      "fieldname": "unicommerce_api_url",
       "fieldtype": "Data",
       "in_list_view": 1,
       "label": "API URL",
       "reqd": 1
     },
     {
-      "fieldname": "template_api_token",
+      "fieldname": "unicommerce_api_token",
       "fieldtype": "Password",
       "label": "API Token",
       "reqd": 1
@@ -49,7 +49,7 @@
       "label": "Alaiy OS Defaults"
     },
     {
-      "fieldname": "template_company",
+      "fieldname": "unicommerce_company",
       "fieldtype": "Link",
       "label": "Company",
       "options": "Company",
@@ -57,14 +57,14 @@
     },
     {
       "description": "Default warehouse for stock synced through this connector.",
-      "fieldname": "template_default_warehouse",
+      "fieldname": "unicommerce_default_warehouse",
       "fieldtype": "Link",
       "label": "Default Warehouse",
       "options": "Warehouse",
       "reqd": 1
     },
     {
-      "fieldname": "template_price_list",
+      "fieldname": "unicommerce_price_list",
       "fieldtype": "Link",
       "label": "Price List",
       "options": "Price List",
@@ -78,7 +78,7 @@
     {
       "default": "Disabled",
       "description": "How often to automatically run the pull sync (external → Alaiy OS).",
-      "fieldname": "template_pull_sync_interval",
+      "fieldname": "unicommerce_pull_sync_interval",
       "fieldtype": "Select",
       "label": "Pull Sync Interval",
       "options": "Disabled\n5 min\n15 min\n30 min\n60 min",
@@ -87,7 +87,7 @@
     {
       "default": "Disabled",
       "description": "How often to automatically run the push sync (Alaiy OS → external).",
-      "fieldname": "template_push_sync_interval",
+      "fieldname": "unicommerce_push_sync_interval",
       "fieldtype": "Select",
       "label": "Push Sync Interval",
       "options": "Disabled\n5 min\n15 min\n30 min\n60 min",
@@ -98,8 +98,8 @@
   "links": [],
   "modified": "2026-07-20 00:00:00.000000",
   "modified_by": "Administrator",
-  "module": "Alaiy Os Connector Template",
-  "name": "Template Connector Settings",
+  "module": "Alaiy Os Connector Unicommerce",
+  "name": "Unicommerce Connector Settings",
   "owner": "Administrator",
   "permissions": [
     {

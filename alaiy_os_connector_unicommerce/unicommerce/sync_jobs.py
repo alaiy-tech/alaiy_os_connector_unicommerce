@@ -2,8 +2,8 @@
 # For license information, please see license.txt
 """
 Scheduler entry point. hooks.py runs check_and_enqueue() every minute; it
-reads the configured intervals from Template Connector Settings and enqueues
-a background job per sync type only when one is actually due.
+reads the configured intervals from Unicommerce Connector Settings and
+enqueues a background job per sync type only when one is actually due.
 """
 
 import frappe
@@ -22,22 +22,22 @@ _STALE_RUNNING_SECONDS = 1800
 
 
 def check_and_enqueue():
-    if not frappe.db.exists("DocType", "Template Sync Log"):
+    if not frappe.db.exists("DocType", "Unicommerce Sync Log"):
         return
 
-    settings = frappe.get_single("Template Connector Settings")
+    settings = frappe.get_single("Unicommerce Connector Settings")
     if not settings.is_enabled:
         return
 
     _maybe_enqueue(
-        interval_setting=settings.template_pull_sync_interval or "Disabled",
+        interval_setting=settings.unicommerce_pull_sync_interval or "Disabled",
         sync_type="pull",
-        enqueue_fn="alaiy_os_connector_template.template.sync.run_pull_sync",
+        enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_pull_sync",
     )
     _maybe_enqueue(
-        interval_setting=settings.template_push_sync_interval or "Disabled",
+        interval_setting=settings.unicommerce_push_sync_interval or "Disabled",
         sync_type="push",
-        enqueue_fn="alaiy_os_connector_template.template.sync.run_push_sync",
+        enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
     )
 
 
@@ -50,7 +50,7 @@ def _maybe_enqueue(interval_setting, sync_type, enqueue_fn):
 
     # Skip if a (non-stale) job is already running for this sync type.
     running = frappe.db.get_value(
-        "Template Sync Log",
+        "Unicommerce Sync Log",
         {"sync_type": sync_type, "status": "running"},
         "started_at",
         order_by="started_at desc",
@@ -60,7 +60,7 @@ def _maybe_enqueue(interval_setting, sync_type, enqueue_fn):
 
     # Skip if the last success is still inside the configured interval.
     last_success = frappe.db.get_value(
-        "Template Sync Log",
+        "Unicommerce Sync Log",
         {"sync_type": sync_type, "status": "success"},
         "started_at",
         order_by="started_at desc",
