@@ -11,9 +11,9 @@ import frappe
 
 @frappe.whitelist()
 def test_connection():
-    doc = frappe.get_single("Template Connector Settings")
-    api_url = (doc.template_api_url or "").strip().rstrip("/")
-    api_token = doc.get_password("template_api_token") if doc.template_api_token else None
+    doc = frappe.get_single("Unicommerce Connector Settings")
+    api_url = (doc.unicommerce_api_url or "").strip().rstrip("/")
+    api_token = doc.get_password("unicommerce_api_token") if doc.unicommerce_api_token else None
 
     if not api_url:
         return {"success": False, "message": "API URL is not set."}

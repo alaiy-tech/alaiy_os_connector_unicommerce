@@ -1,21 +1,21 @@
-frappe.ui.form.on("Template Connector Settings", {
+frappe.ui.form.on("Unicommerce Connector Settings", {
   refresh(frm) {
-    frm.page.set_title(__("Template Settings"));
+    frm.page.set_title(__("Unicommerce Settings"));
 
     // Mount the shared Alaiy OS connector status card + password reveal.
-    alaiy_os.connector_card.mount(frm, "template");
+    alaiy_os.connector_card.mount(frm, "unicommerce");
     alaiy_os.connector_card.setup_password_reveal(
       frm,
-      "template_api_token",
-      "template",
+      "unicommerce_api_token",
+      "unicommerce",
     );
 
     // Auto-fill Company with the site default if empty.
-    if (!frm.doc.template_company) {
+    if (!frm.doc.unicommerce_company) {
       frappe.db
         .get_single_value("Global Defaults", "default_company")
         .then((company) => {
-          if (company) frm.set_value("template_company", company);
+          if (company) frm.set_value("unicommerce_company", company);
         });
     }
 
@@ -27,7 +27,7 @@ frappe.ui.form.on("Template Connector Settings", {
           // so a successful test also flips the "Connector Status" card at
           // the top of this form from "Not configured" to "Connected".
           method: "alaiy_os.api.connectors.test_connector",
-          args: { connector_id: "template" },
+          args: { connector_id: "unicommerce" },
           callback(r) {
             const res = r.message || {};
             frappe.show_alert(
@@ -50,7 +50,7 @@ frappe.ui.form.on("Template Connector Settings", {
       __("Run Pull Sync"),
       () => {
         frappe.call({
-          method: "alaiy_os_connector_template.api.sync.trigger_pull_sync",
+          method: "alaiy_os_connector_unicommerce.api.sync.trigger_pull_sync",
           callback: () =>
             frappe.show_alert(
               { message: __("Pull sync queued"), indicator: "blue" },
@@ -65,7 +65,7 @@ frappe.ui.form.on("Template Connector Settings", {
       __("Run Push Sync"),
       () => {
         frappe.call({
-          method: "alaiy_os_connector_template.api.sync.trigger_push_sync",
+          method: "alaiy_os_connector_unicommerce.api.sync.trigger_push_sync",
           callback: () =>
             frappe.show_alert(
               { message: __("Push sync queued"), indicator: "blue" },

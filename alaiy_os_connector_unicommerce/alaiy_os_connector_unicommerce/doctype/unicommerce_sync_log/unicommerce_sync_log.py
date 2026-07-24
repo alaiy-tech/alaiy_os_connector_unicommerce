@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class TemplateSyncLog(Document):
+class UnicommerceSyncLog(Document):
     pass

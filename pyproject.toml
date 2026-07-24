@@ -1,9 +1,9 @@
 [project]
-name = "alaiy_os_connector_template"
+name = "alaiy_os_connector_unicommerce"
 authors = [
     { name = "Alaiy", email = "mail@alaiy.com"}
 ]
-description = "Connector Template for AlaiyOS"
+description = "Unicommerce Connector for AlaiyOS"
 requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]

@@ -1,16 +1,16 @@
-const TEMPLATE_SYNC_TYPE_COLORS = {
+const UNICOMMERCE_SYNC_TYPE_COLORS = {
 	pull: "blue",
 	push: "orange",
 	webhook: "cyan",
 };
 
-const TEMPLATE_TRIGGER_COLORS = {
+const UNICOMMERCE_TRIGGER_COLORS = {
 	scheduled: "purple",
 	manual: "pink",
 	webhook: "cyan",
 };
 
-const TEMPLATE_STATUS_COLORS = {
+const UNICOMMERCE_STATUS_COLORS = {
 	queued: "grey",
 	running: "blue",
 	success: "green",
@@ -26,17 +26,17 @@ function alaiy_pill(value, colors) {
 	</span>`;
 }
 
-frappe.listview_settings["Template Sync Log"] = {
+frappe.listview_settings["Unicommerce Sync Log"] = {
 	get_indicator(doc) {
 		return [
 			__(doc.status),
-			TEMPLATE_STATUS_COLORS[doc.status] || "darkgrey",
+			UNICOMMERCE_STATUS_COLORS[doc.status] || "darkgrey",
 			`status,=,${doc.status}`,
 		];
 	},
 	formatters: {
-		sync_type: (value) => alaiy_pill(value, TEMPLATE_SYNC_TYPE_COLORS),
-		trigger: (value) => alaiy_pill(value, TEMPLATE_TRIGGER_COLORS),
-		status: (value) => alaiy_pill(value, TEMPLATE_STATUS_COLORS),
+		sync_type: (value) => alaiy_pill(value, UNICOMMERCE_SYNC_TYPE_COLORS),
+		trigger: (value) => alaiy_pill(value, UNICOMMERCE_TRIGGER_COLORS),
+		status: (value) => alaiy_pill(value, UNICOMMERCE_STATUS_COLORS),
 	},
 };
