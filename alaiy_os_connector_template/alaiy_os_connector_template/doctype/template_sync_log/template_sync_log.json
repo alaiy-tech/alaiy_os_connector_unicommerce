@@ -1,0 +1,120 @@
+{
+  "autoname": "TPL-SYNC-.YYYY.-.MM.-.DD.-.######",
+  "creation": "2026-07-20 00:00:00.000000",
+  "docstatus": 0,
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "sync_type",
+    "trigger",
+    "status",
+    "started_at",
+    "finished_at",
+    "items_processed",
+    "items_created",
+    "items_updated",
+    "items_failed",
+    "pages_total",
+    "pages_done",
+    "error_message",
+    "log_messages"
+  ],
+  "fields": [
+    {
+      "fieldname": "sync_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Sync Type",
+      "options": "pull\npush"
+    },
+    {
+      "fieldname": "trigger",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Trigger",
+      "options": "scheduled\nmanual\nwebhook"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "options": "queued\nrunning\nsuccess\nfailed\nskipped"
+    },
+    {
+      "fieldname": "started_at",
+      "fieldtype": "Datetime",
+      "in_list_view": 1,
+      "label": "Started At"
+    },
+    {
+      "fieldname": "finished_at",
+      "fieldtype": "Datetime",
+      "label": "Finished At"
+    },
+    {
+      "default": "0",
+      "fieldname": "items_processed",
+      "fieldtype": "Int",
+      "label": "Items Processed"
+    },
+    {
+      "default": "0",
+      "fieldname": "items_created",
+      "fieldtype": "Int",
+      "label": "Items Created"
+    },
+    {
+      "default": "0",
+      "fieldname": "items_updated",
+      "fieldtype": "Int",
+      "label": "Items Updated"
+    },
+    {
+      "default": "0",
+      "fieldname": "items_failed",
+      "fieldtype": "Int",
+      "label": "Items Failed"
+    },
+    {
+      "default": "0",
+      "fieldname": "pages_total",
+      "fieldtype": "Int",
+      "label": "Pages Total"
+    },
+    {
+      "default": "0",
+      "fieldname": "pages_done",
+      "fieldtype": "Int",
+      "label": "Pages Done"
+    },
+    {
+      "fieldname": "error_message",
+      "fieldtype": "Small Text",
+      "label": "Error Message"
+    },
+    {
+      "fieldname": "log_messages",
+      "fieldtype": "Long Text",
+      "label": "Log Messages"
+    }
+  ],
+  "links": [],
+  "modified": "2026-07-20 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Alaiy Os Connector Template",
+  "name": "Template Sync Log",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "read": 1,
+      "report": 1,
+      "role": "System Manager"
+    }
+  ],
+  "sort_field": "started_at",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 0
+}

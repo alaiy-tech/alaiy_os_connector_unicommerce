@@ -1,0 +1,122 @@
+{
+  "creation": "2026-07-20 00:00:00.000000",
+  "docstatus": 0,
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "is_enabled",
+    "sb_connection",
+    "template_api_url",
+    "template_api_token",
+    "sb_defaults",
+    "template_company",
+    "template_default_warehouse",
+    "template_price_list",
+    "sb_schedule",
+    "template_pull_sync_interval",
+    "template_push_sync_interval"
+  ],
+  "fields": [
+    {
+      "default": "0",
+      "fieldname": "is_enabled",
+      "fieldtype": "Check",
+      "label": "Enable Template"
+    },
+    {
+      "fieldname": "sb_connection",
+      "fieldtype": "Section Break",
+      "label": "API Connection"
+    },
+    {
+      "description": "Base URL of the external API, e.g. https://api.example.com/v1",
+      "fieldname": "template_api_url",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "API URL",
+      "reqd": 1
+    },
+    {
+      "fieldname": "template_api_token",
+      "fieldtype": "Password",
+      "label": "API Token",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sb_defaults",
+      "fieldtype": "Section Break",
+      "label": "Alaiy OS Defaults"
+    },
+    {
+      "fieldname": "template_company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "description": "Default warehouse for stock synced through this connector.",
+      "fieldname": "template_default_warehouse",
+      "fieldtype": "Link",
+      "label": "Default Warehouse",
+      "options": "Warehouse",
+      "reqd": 1
+    },
+    {
+      "fieldname": "template_price_list",
+      "fieldtype": "Link",
+      "label": "Price List",
+      "options": "Price List",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sb_schedule",
+      "fieldtype": "Section Break",
+      "label": "Sync Schedule"
+    },
+    {
+      "default": "Disabled",
+      "description": "How often to automatically run the pull sync (external → Alaiy OS).",
+      "fieldname": "template_pull_sync_interval",
+      "fieldtype": "Select",
+      "label": "Pull Sync Interval",
+      "options": "Disabled\n5 min\n15 min\n30 min\n60 min",
+      "reqd": 1
+    },
+    {
+      "default": "Disabled",
+      "description": "How often to automatically run the push sync (Alaiy OS → external).",
+      "fieldname": "template_push_sync_interval",
+      "fieldtype": "Select",
+      "label": "Push Sync Interval",
+      "options": "Disabled\n5 min\n15 min\n30 min\n60 min",
+      "reqd": 1
+    }
+  ],
+  "is_single": 1,
+  "links": [],
+  "modified": "2026-07-20 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Alaiy Os Connector Template",
+  "name": "Template Connector Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 0
+}
