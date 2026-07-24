@@ -1,0 +1,68 @@
+{
+  "actions": [],
+  "creation": "2026-07-24 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "sales_order",
+    "sales_invoice",
+    "posting_date",
+    "pick_status",
+    "invoice_url",
+    "invoice_pdf"
+  ],
+  "fields": [
+    {
+      "fieldname": "sales_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Sales Order",
+      "options": "Sales Order"
+    },
+    {
+      "fieldname": "sales_invoice",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Sales Invoice",
+      "options": "Sales Invoice"
+    },
+    {
+      "fetch_from": "sales_invoice.posting_date",
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "label": "Posting Date"
+    },
+    {
+      "fieldname": "pick_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Pick Status",
+      "options": "\nPartially Picked\nFully Picked"
+    },
+    {
+      "fieldname": "invoice_url",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Invoice URL"
+    },
+    {
+      "fieldname": "invoice_pdf",
+      "fieldtype": "Attach",
+      "in_list_view": 1,
+      "label": "Invoice Pdf"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-07-24 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Alaiy Os Connector Unicommerce",
+  "name": "Pick List Unicommerce Order Detail",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}
