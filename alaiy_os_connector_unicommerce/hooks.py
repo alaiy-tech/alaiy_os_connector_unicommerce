@@ -43,14 +43,23 @@ alaiy_os_sidebar_log_items = [
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
-# Runs every minute; check_and_enqueue() decides whether any sync is actually
-# due based on the intervals configured in Unicommerce Connector Settings.
+# The "* * * * *" job decides whether a full pull/push sync is due (and is
+# tracked in Unicommerce Sync Log); the 5-minute jobs below are lighter,
+# independent polls that run on their own fixed cadence like upstream did.
 scheduler_events = {
     "cron": {
         "* * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.sync_jobs.check_and_enqueue"
-        ]
-    }
+        ],
+        "*/5 * * * *": [
+            "alaiy_os_connector_unicommerce.unicommerce.inventory.push.update_inventory_on_unicommerce",
+            "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
+        ],
+    },
+    "hourly_long": [
+        "alaiy_os_connector_unicommerce.unicommerce.order.status.update_sales_order_status",
+        "alaiy_os_connector_unicommerce.unicommerce.order.status.update_shipping_package_status",
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -58,14 +67,36 @@ scheduler_events = {
 # ---------------------------------------------------------------------------
 doc_events = {
     "Item": {
-        "validate": "alaiy_os_connector_unicommerce.unicommerce.product.validate.validate_item",
+        "validate": [
+            "alaiy_os_connector_unicommerce.unicommerce.product.validate.validate_item",
+            "alaiy_os_connector_unicommerce.unicommerce.utils.validate_tax_template",
+        ],
     },
-    # "Sales Order": {
-    # 	"on_submit": "alaiy_os_connector_unicommerce.unicommerce.order.push.on_sales_order_submit",
-    # },
+    "Sales Order": {
+        "on_update_after_submit": "alaiy_os_connector_unicommerce.unicommerce.order.shipping.update_shipping_info",
+        "on_cancel": "alaiy_os_connector_unicommerce.unicommerce.order.status.ignore_pick_list_on_sales_order_cancel",
+    },
+    "Stock Entry": {
+        "validate": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.grn.validate_stock_entry_for_grn",
+        "on_submit": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.grn.upload_grn",
+        "on_cancel": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.grn.prevent_grn_cancel",
+    },
+    "Pick List": {
+        "validate": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.pick_list.validate",
+    },
+    "Sales Invoice": {
+        "on_submit": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice.on_submit",
+        "on_cancel": "alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice.on_cancel",
+    },
 }
 
-# List-view client scripts for ERPNext doctypes (examples)
-# doctype_list_js = {
-# 	"Item": "public/js/item_list.js",
-# }
+# ---------------------------------------------------------------------------
+# Client scripts
+# ---------------------------------------------------------------------------
+doctype_js = {
+    "Sales Order": "public/js/unicommerce/sales_order.js",
+    "Sales Invoice": "public/js/unicommerce/sales_invoice.js",
+    "Item": "public/js/unicommerce/item.js",
+    "Stock Entry": "public/js/unicommerce/stock_entry.js",
+    "Pick List": "public/js/unicommerce/pick_list.js",
+}

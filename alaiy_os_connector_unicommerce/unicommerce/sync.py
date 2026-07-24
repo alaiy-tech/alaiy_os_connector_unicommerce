@@ -61,13 +61,11 @@ def _run(sync_type, trigger, log_name, worker):
 
 
 def run_pull_sync(trigger="scheduled", log_name=None):
-    """
-    Pull data from Unicommerce into Alaiy OS. Order pull is the primary pull
-    direction for this connector (items are push-only, see run_push_sync) --
-    TODO: wire to unicommerce.order.pull once that module lands.
-    """
+    """Pull new orders from Unicommerce into Alaiy OS -- the primary pull
+    direction for this connector (items are push-only, see run_push_sync)."""
     def worker(log):
-        pass
+        from alaiy_os_connector_unicommerce.unicommerce.order.pull import sync_new_orders
+        sync_new_orders(force=True)
 
     _run("pull", trigger, log_name, worker)
 
