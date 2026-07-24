@@ -61,20 +61,21 @@ def _run(sync_type, trigger, log_name, worker):
 
 
 def run_pull_sync(trigger="scheduled", log_name=None):
-    """Pull data from the external API into Alaiy OS. TODO: implement."""
+    """
+    Pull data from Unicommerce into Alaiy OS. Order pull is the primary pull
+    direction for this connector (items are push-only, see run_push_sync) --
+    TODO: wire to unicommerce.order.pull once that module lands.
+    """
     def worker(log):
-        # from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
-        # client = UnicommerceClient()
-        # data = client.get("...")
-        # ... upsert into ERPNext, updating log counters as you go ...
         pass
 
     _run("pull", trigger, log_name, worker)
 
 
 def run_push_sync(trigger="scheduled", log_name=None):
-    """Push Alaiy OS data out to the external API. TODO: implement."""
+    """Push new/changed Items to Unicommerce."""
     def worker(log):
-        pass
+        from alaiy_os_connector_unicommerce.unicommerce.product.push import upload_new_items
+        upload_new_items(force=True)
 
     _run("push", trigger, log_name, worker)

@@ -54,17 +54,16 @@ scheduler_events = {
 }
 
 # ---------------------------------------------------------------------------
-# Document events (examples — wire up the ones your connector needs)
+# Document events
 # ---------------------------------------------------------------------------
-# doc_events = {
-# 	"Item": {
-# 		"after_insert": "alaiy_os_connector_unicommerce.unicommerce.sync.on_item_change",
-# 		"on_update": "alaiy_os_connector_unicommerce.unicommerce.sync.on_item_change",
-# 	},
-# 	"Sales Order": {
-# 		"on_submit": "alaiy_os_connector_unicommerce.unicommerce.sync.on_sales_order_submit",
-# 	},
-# }
+doc_events = {
+    "Item": {
+        "validate": "alaiy_os_connector_unicommerce.unicommerce.product.validate.validate_item",
+    },
+    # "Sales Order": {
+    # 	"on_submit": "alaiy_os_connector_unicommerce.unicommerce.order.push.on_sales_order_submit",
+    # },
+}
 
 # List-view client scripts for ERPNext doctypes (examples)
 # doctype_list_js = {

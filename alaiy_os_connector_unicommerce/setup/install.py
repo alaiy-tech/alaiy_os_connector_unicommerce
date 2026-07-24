@@ -109,8 +109,7 @@ def _fix_settings_as_single():
 def setup_custom_fields():
     """
     Add this connector's custom fields to ERPNext doctypes. Idempotent — safe
-    to call on every enable/migrate. Replace the examples below with the
-    external-id / flag fields your connector actually needs.
+    to call on every enable/migrate.
     """
     item_fields = [
         {
@@ -129,9 +128,44 @@ def setup_custom_fields():
             "insert_after": "disabled",
             "description": "Include this Item in Unicommerce syncs.",
         },
+        {
+            "fieldname": "unicommerce_item_length",
+            "label": "Length (Unicommerce)",
+            "fieldtype": "Float",
+            "insert_after": "weight_per_unit",
+        },
+        {
+            "fieldname": "unicommerce_item_width",
+            "label": "Width (Unicommerce)",
+            "fieldtype": "Float",
+            "insert_after": "unicommerce_item_length",
+        },
+        {
+            "fieldname": "unicommerce_item_height",
+            "label": "Height (Unicommerce)",
+            "fieldtype": "Float",
+            "insert_after": "unicommerce_item_width",
+        },
+        {
+            "fieldname": "unicommerce_batch_group_code",
+            "label": "Unicommerce Batch Group Code",
+            "fieldtype": "Data",
+            "insert_after": "unicommerce_item_height",
+        },
     ]
-
     _ensure_custom_fields("Item", item_fields)
+
+    item_group_fields = [
+        {
+            "fieldname": "unicommerce_product_category",
+            "label": "Unicommerce Product Category",
+            "fieldtype": "Data",
+            "description": "Unicommerce category code this Item Group maps to.",
+            "insert_after": "item_group_name",
+        },
+    ]
+    _ensure_custom_fields("Item Group", item_group_fields)
+
     frappe.db.commit()
 
 
