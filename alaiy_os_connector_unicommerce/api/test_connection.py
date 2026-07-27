@@ -3,7 +3,7 @@
 """
 Reachability check for the saved credentials. Wired into the registry via
 connector_meta["test_method"] and called by the "Test Connection" button.
-Always returns {"success": bool, "message": str} — never raises to the caller.
+Always returns {"success": bool, "message": str} -- never raises to the caller.
 """
 
 import frappe
@@ -11,36 +11,17 @@ import frappe
 
 @frappe.whitelist()
 def test_connection():
-    doc = frappe.get_single("Unicommerce Connector Settings")
-    api_url = (doc.unicommerce_api_url or "").strip().rstrip("/")
-    api_token = doc.get_password("unicommerce_api_token") if doc.unicommerce_api_token else None
+    settings = frappe.get_single("Unicommerce Connector Settings")
 
-    if not api_url:
-        return {"success": False, "message": "API URL is not set."}
-    if not api_token:
-        return {"success": False, "message": "API Token is not set."}
+    if not settings.unicommerce_site:
+        return {"success": False, "message": "Unicommerce Site is not set."}
+    if not settings.username or not settings.get_password("password"):
+        return {"success": False, "message": "Username/Password is not set."}
 
-    import requests
-
-    # Point this at a lightweight, auth-required endpoint on your API.
-    url = f"{api_url}/ping"
     try:
-        resp = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {api_token}"},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            return {"success": True, "message": f"Connected successfully ({resp.status_code})"}
-        elif resp.status_code == 401:
-            return {"success": False, "message": "Authentication failed — check your API Token."}
-        elif resp.status_code == 403:
-            return {"success": False, "message": "Access forbidden — verify your credentials."}
-        else:
-            return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-    except requests.exceptions.ConnectionError:
-        return {"success": False, "message": f"Could not connect to {api_url}. Check the API URL."}
-    except requests.exceptions.Timeout:
-        return {"success": False, "message": "Request timed out (10s)."}
+        settings.update_tokens(grant_type="password")
+        settings.flags.ignore_permissions = True
+        settings.save()
+        return {"success": True, "message": f"Connected to {settings.unicommerce_site}."}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}

@@ -12,8 +12,6 @@ its settings form (see the doctype controller's _run_setup()), so installing
 the app is cheap and non-destructive until an admin opts in.
 """
 
-import json
-
 import frappe
 
 
@@ -321,65 +319,4 @@ def _ensure_custom_fields(doctype, fields):
         cf.description = f.get("description", "")
         cf.module = "Alaiy Os Connector Unicommerce"
         cf.insert(ignore_permissions=True)
-
-
-# ---------------------------------------------------------------------------
-# Reusable migration utilities (not called by default — here because every
-# connector eventually needs them; wire them into sync_connector_registry as
-# your schema evolves).
-# ---------------------------------------------------------------------------
-def _backfill_singles_defaults(doctype, fieldnames):
-    """
-    A field's `default` only applies to NEW documents. For a Single doctype's
-    one pre-existing row, adding a field with a default later does not populate
-    it — it reads back empty forever unless someone opens and saves the form.
-    Backfill it here, once, idempotently.
-
-    Checks row EXISTENCE in tabSingles rather than the value, because for a
-    Check field "never set" and "explicitly 0" both read back as 0.
-    """
-    meta = frappe.get_meta(doctype)
-    for fieldname in fieldnames:
-        already_set = frappe.db.sql(
-            "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s LIMIT 1",
-            (doctype, fieldname),
-        )
-        if already_set:
-            continue
-        field = meta.get_field(fieldname)
-        if not field or field.default in (None, ""):
-            continue
-        frappe.db.set_single_value(doctype, fieldname, field.default)
-    frappe.db.commit()
-
-
-def _drop_orphaned_singles_value(doctype, fieldname):
-    """
-    Removing a field from a DocType's JSON doesn't clean up its old stored
-    value on a site that already had one — it becomes an orphaned, invisible
-    row in tabSingles. Delete it explicitly.
-    """
-    frappe.db.sql(
-        "DELETE FROM `tabSingles` WHERE doctype=%s AND field=%s",
-        (doctype, fieldname),
-    )
-    frappe.db.commit()
-
-
-def _ensure_list_view_column(doctype, fieldname, label):
-    """
-    Once a doctype's `List View Settings` row exists (created the first time
-    anyone customizes columns), it overrides the "show every in_list_view
-    field automatically" default — a newly added in_list_view field then never
-    appears until re-added by hand. Append our field to the customized set.
-    """
-    if not frappe.db.exists("List View Settings", doctype):
-        return  # no customization yet — in_list_view alone is enough
-    settings = frappe.get_doc("List View Settings", doctype)
-    fields = json.loads(settings.fields or "[]")
-    if any(f.get("fieldname") == fieldname for f in fields):
-        return
-    fields.append({"fieldname": fieldname, "label": label})
-    settings.fields = json.dumps(fields)
-    settings.save(ignore_permissions=True)
     frappe.db.commit()
