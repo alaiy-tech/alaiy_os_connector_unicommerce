@@ -60,6 +60,21 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
     configured_channels = {
         c.channel_id for c in frappe.get_all("Unicommerce Channel", filters={"enabled": 1}, fields="channel_id")
     }
+    # A fresh site has no Unicommerce Channel records at all, and nothing
+    # creates them automatically -- without this the loop below silently
+    # drops every order as "unconfigured channel" and the sync reports
+    # success having imported nothing, with no way to tell why.
+    if not configured_channels:
+        frappe.log_error(
+            title="Unicommerce: no enabled channels configured, order pull imported nothing",
+            message=(
+                "Order pull fetched orders from Unicommerce but every one was skipped because no "
+                "enabled Unicommerce Channel record exists locally. Create one per channel "
+                "(channel_id must match Unicommerce's own channel code) and enable it."
+            ),
+        )
+        return
+
     for order in uni_orders:
         if order["channel"] not in configured_channels:
             continue
