@@ -1,0 +1,11 @@
+{
+  "doctype": "Page",
+  "module": "Alaiy Os Connector Unicommerce",
+  "name": "unicommerce",
+  "page_name": "unicommerce",
+  "standard": "Yes",
+  "system_page": 0,
+  "title": "Unicommerce",
+  "icon": "box",
+  "roles": []
+}
