@@ -195,9 +195,15 @@ frappe.pages["unicommerce"].on_page_load = function (wrapper) {
 			callback: function (r) {
 				idle(btn);
 				var m = r.message || {};
-				say(log_id, m.message || "Queued. Progress appears in the sync log once it finishes.", "ok");
-				setTimeout(load_logs, 1500);
-				setTimeout(load_stats, 3000);
+				say(log_id, m.message || "Queued. It appears in Recent Syncs below once the worker picks it up.", "ok");
+				/* The log row is created by the enqueued job, not by this call, so
+				   a single quick refresh lands before the row is committed and shows
+				   nothing. Poll a few times instead, spread far enough apart to catch
+				   both a fast no-op sync and a slower real one. */
+				[1500, 5000, 15000, 45000].forEach(function (delay) {
+					setTimeout(load_logs, delay);
+				});
+				setTimeout(load_stats, 5000);
 			},
 			error: function () {
 				idle(btn);
