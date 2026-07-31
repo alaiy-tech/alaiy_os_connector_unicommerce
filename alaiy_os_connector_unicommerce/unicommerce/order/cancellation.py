@@ -7,8 +7,8 @@ from collections import defaultdict
 from datetime import date, datetime
 
 import frappe
-from erpnext.accounts.doctype.sales_invoice.mapper import make_sales_return
-from erpnext.accounts.services.child_item_update import update_child_qty_rate
+from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+from erpnext.controllers.accounts_controller import update_child_qty_rate
 
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
