@@ -3,6 +3,7 @@
 """Customer + address creation from a Unicommerce order payload."""
 
 import json
+import re
 from typing import Any
 
 import frappe
@@ -14,6 +15,31 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 from alaiy_os_connector_unicommerce.unicommerce.geo import (
     UNICOMMERCE_COUNTRY_MAPPING, UNICOMMERCE_INDIAN_STATES_MAPPING,
 )
+
+
+# Amazon and Flipkart redact buyer name, address lines and phone at the API
+# level, so those fields arrive as a run of asterisks rather than a value.
+_MASKED_RE = re.compile(r"^\*+$")
+
+
+def _is_masked(value) -> bool:
+    return bool(value) and bool(_MASKED_RE.match(str(value).strip()))
+
+
+def _customer_name(order: dict, address: dict) -> str:
+    """Name to give a new Customer.
+
+    Marketplace orders arrive with the buyer's name redacted to "********", so
+    naming customers by it puts every single order under one name -- Frappe then
+    appends " - N" and the counter collides once there are hundreds of them.
+    Fall back to the order code, which keeps each anonymous buyer distinct and
+    traceable back to Unicommerce. Channels that do send a real name (CUSTOM,
+    for instance) keep using it.
+    """
+    name = (address.get("name") or "").strip()
+    if name and not _is_masked(name):
+        return name
+    return f"{order['channel']} - {order.get('displayOrderCode') or order['code']}"
 
 
 def sync_customer(order: dict):
@@ -39,10 +65,9 @@ def _create_new_customer(order: dict):
         or settings.default_customer_group
     )
 
-    name = address.get("name") or order["channel"] + " customer"
     customer = frappe.get_doc({
         "doctype": "Customer",
-        "customer_name": name,
+        "customer_name": _customer_name(order, address),
         "customer_group": customer_group,
         "territory": get_root_of("Territory"),
         "customer_type": "Individual",
@@ -61,8 +86,14 @@ def _check_if_customer_exists(address: dict, customer_code):
     customer_name = None
     if customer_code:
         customer_name = frappe.db.get_value("Customer", {CUSTOMER_CODE_FIELD: customer_code})
-    if not customer_name:
+
+    # A redacted address cannot identify a person: name, address lines and phone
+    # are all asterisks, leaving only city/state/pincode. Matching on it would
+    # merge every masked buyer in the same pincode into one customer, so a
+    # marketplace order without a customer code always gets its own record.
+    if not customer_name and not _is_masked(address.get("name")):
         customer_name = frappe.db.get_value("Customer", {ADDRESS_JSON_FIELD: json.dumps(address)})
+
     if customer_name:
         return frappe.get_doc("Customer", customer_name)
 
@@ -102,3 +133,37 @@ def _create_customer_address(uni_address: dict, address_type: str, customer, als
         "is_primary_address": int(address_type == "Billing"),
         "is_shipping_address": int(also_shipping or address_type == "Shipping"),
     }).insert(ignore_mandatory=True)
+
+
+def check_customer_naming():
+    """Self-check for the masked-buyer naming rules. No DB access.
+
+    bench --site <site> execute \
+        alaiy_os_connector_unicommerce.unicommerce.customer.check_customer_naming
+    """
+    assert _is_masked("********")
+    assert _is_masked("  ****  ")
+    assert not _is_masked("Anas Ahmed")
+    assert not _is_masked("")
+    assert not _is_masked(None)
+    # A partially redacted value is still real data -- don't treat it as masked.
+    assert not _is_masked("A*** A****")
+
+    order = {"channel": "FLIPKART_GLOBALI", "code": "565f2969", "displayOrderCode": "OD4381377550"}
+
+    # Masked and empty names both fall back to the order code, and two orders
+    # from different anonymous buyers must not collide.
+    assert _customer_name(order, {"name": "********"}) == "FLIPKART_GLOBALI - OD4381377550"
+    assert _customer_name(order, {"name": ""}) == "FLIPKART_GLOBALI - OD4381377550"
+    assert _customer_name(order, {}) == "FLIPKART_GLOBALI - OD4381377550"
+    other = dict(order, displayOrderCode="OD9999999999")
+    assert _customer_name(order, {"name": "********"}) != _customer_name(other, {"name": "********"})
+
+    # displayOrderCode is preferred, but the internal code is a valid fallback.
+    assert _customer_name({"channel": "CUSTOM", "code": "abc123"}, {"name": "********"}) == "CUSTOM - abc123"
+
+    # A real name is kept, whitespace trimmed.
+    assert _customer_name(order, {"name": "Anas Ahmed"}) == "Anas Ahmed"
+    assert _customer_name(order, {"name": "  Anas Ahmed  "}) == "Anas Ahmed"
+
+    print("customer naming self-check passed")

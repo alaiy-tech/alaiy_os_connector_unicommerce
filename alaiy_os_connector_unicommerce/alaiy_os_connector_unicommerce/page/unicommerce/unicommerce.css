@@ -1,0 +1,327 @@
+/* Unicommerce desk page. Built on Frappe's own CSS variables so it tracks the
+   desk's light/dark theme instead of hardcoding a palette. */
+
+.uc-container {
+	max-width: 1100px;
+	padding: 0 0 3rem;
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.uc-card {
+	background: var(--card-bg, var(--fg-color));
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md, 8px);
+	margin-bottom: 1rem;
+	overflow: hidden;
+}
+
+.uc-card-header {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 1rem 1.25rem;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.uc-card-header-text h5 {
+	margin: 0;
+	font-size: var(--text-md);
+	font-weight: 600;
+}
+
+.uc-card-header-text p {
+	margin: 0.15rem 0 0;
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.uc-card-body {
+	padding: 1.25rem;
+}
+
+.uc-icon-badge {
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	width: 2rem;
+	height: 2rem;
+	border-radius: var(--border-radius, 6px);
+	background: var(--bg-light-gray, var(--control-bg));
+	color: var(--text-color);
+	font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------- stats */
+
+.uc-stat-group-title {
+	font-size: var(--text-sm);
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin: 0 0 0.6rem;
+}
+
+.uc-stats-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 0.6rem;
+	margin-bottom: 1.25rem;
+}
+
+.uc-stats-grid:last-child {
+	margin-bottom: 0;
+}
+
+.uc-stat-tile {
+	padding: 0.85rem 0.9rem;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius, 6px);
+	border-left-width: 3px;
+	background: var(--control-bg, var(--bg-light-gray));
+}
+
+.uc-stat-local {
+	border-left-color: var(--blue-500, #2490ef);
+}
+
+.uc-stat-remote {
+	border-left-color: var(--purple-500, #7574d6);
+}
+
+.uc-stat-value {
+	font-size: 1.35rem;
+	font-weight: 600;
+	line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+}
+
+.uc-stat-label {
+	margin-top: 0.15rem;
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+/* Skeletons while the counts load. Local stats are fast; the live tenant
+   counts cost an API round trip, so their skeleton is visible for longer. */
+.uc-skeleton {
+	background: var(--border-color);
+	border-radius: 3px;
+	animation: uc-pulse 1.4s ease-in-out infinite;
+}
+
+.uc-skeleton-value {
+	height: 1.35rem;
+	width: 55%;
+}
+
+.uc-skeleton-label {
+	height: 0.75rem;
+	width: 85%;
+	margin-top: 0.4rem;
+}
+
+@keyframes uc-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.uc-skeleton, .uc-spinner { animation: none; }
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.uc-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.45rem 0.9rem;
+	margin: 0.35rem 0.35rem 0 0;
+	font-size: var(--text-sm);
+	font-weight: 500;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius, 6px);
+	background: var(--control-bg);
+	color: var(--text-color);
+	cursor: pointer;
+}
+
+.uc-btn:hover:not(:disabled) {
+	filter: brightness(0.96);
+}
+
+.uc-btn:focus-visible {
+	outline: 2px solid var(--blue-500, #2490ef);
+	outline-offset: 2px;
+}
+
+.uc-btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.uc-btn-primary {
+	background: var(--blue-500, #2490ef);
+	border-color: var(--blue-500, #2490ef);
+	color: #fff;
+}
+
+/* Write-to-Unicommerce actions are deliberately not primary -- they should not
+   read as the obvious thing to click. */
+.uc-btn-warning {
+	background: var(--orange-100, #fff3e0);
+	border-color: var(--orange-400, #e8a13a);
+	color: var(--orange-700, #96590f);
+}
+
+.uc-btn-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+}
+
+.uc-btn-row .uc-btn {
+	margin: 0;
+}
+
+.uc-spinner {
+	display: inline-block;
+	width: 0.7rem;
+	height: 0.7rem;
+	border: 2px solid currentColor;
+	border-top-color: transparent;
+	border-radius: 50%;
+	animation: uc-spin 0.7s linear infinite;
+}
+
+@keyframes uc-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* -------------------------------------------------------------- text bits */
+
+.uc-muted {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+	margin: 0 0 0.75rem;
+}
+
+.uc-info-strip {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+	margin-bottom: 0.75rem;
+}
+
+.uc-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0.2rem 0.55rem;
+	font-size: var(--text-xs, 11px);
+	border-radius: 999px;
+	background: var(--bg-light-gray, var(--control-bg));
+	color: var(--text-muted);
+}
+
+.uc-pill-muted {
+	opacity: 0.75;
+	font-style: italic;
+}
+
+.uc-log:empty {
+	display: none;
+}
+
+.uc-log {
+	margin-top: 0.75rem;
+	padding: 0.6rem 0.75rem;
+	font-size: var(--text-sm);
+	border-radius: var(--border-radius, 6px);
+	border-left: 3px solid var(--border-color);
+	background: var(--bg-light-gray, var(--control-bg));
+}
+
+.uc-log-ok {
+	border-left-color: var(--green-500, #48bb74);
+}
+
+.uc-log-error {
+	border-left-color: var(--red-500, #e24c4c);
+}
+
+/* -------------------------------------------------------------- log table */
+
+.uc-log-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.uc-log-table th,
+.uc-log-table td {
+	padding: 0.45rem 0.6rem;
+	text-align: left;
+	border-bottom: 1px solid var(--border-color);
+	white-space: nowrap;
+}
+
+.uc-log-table th {
+	font-weight: 600;
+	color: var(--text-muted);
+	font-size: var(--text-xs, 11px);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.uc-log-table .uc-num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.uc-log-table tbody tr {
+	cursor: pointer;
+}
+
+.uc-log-table tbody tr:hover {
+	background: var(--bg-light-gray, var(--control-bg));
+}
+
+/* Status reads as a shape as well as a word, so a failure is visible without
+   reading the column. */
+.uc-status {
+	display: inline-block;
+	padding: 0.1rem 0.5rem;
+	border-radius: 999px;
+	font-size: var(--text-xs, 11px);
+	font-weight: 500;
+	text-transform: capitalize;
+	background: var(--bg-light-gray, var(--control-bg));
+	color: var(--text-muted);
+}
+
+.uc-status-success,
+.uc-status-completed {
+	background: var(--green-100, #e3f6e8);
+	color: var(--green-700, #1f7a3f);
+}
+
+.uc-status-failed {
+	background: var(--red-100, #fbe6e6);
+	color: var(--red-700, #a82a2a);
+}
+
+.uc-status-running,
+.uc-status-queued {
+	background: var(--blue-100, #e0f0fd);
+	color: var(--blue-700, #135f9e);
+}
+
+/* The log table is the one thing here that can outgrow a narrow window. */
+@media (max-width: 720px) {
+	.uc-card-body > #uc-logs {
+		overflow-x: auto;
+	}
+}
