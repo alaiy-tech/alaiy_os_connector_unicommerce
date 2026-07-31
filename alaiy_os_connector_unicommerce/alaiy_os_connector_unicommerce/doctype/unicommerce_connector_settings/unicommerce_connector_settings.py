@@ -10,6 +10,36 @@ from frappe.utils import add_to_date, get_datetime, now_datetime
 from alaiy_os_connector_unicommerce.unicommerce.constants import GRN_STOCK_ENTRY_TYPE
 
 
+def _auth_error_detail(data: dict, raw: str) -> str:
+    """
+    Human-readable reason out of a failed /oauth/token response.
+
+    Unicommerce does not answer with OAuth's error/error_description on every
+    failure -- a bad username comes back as HTTP 500 carrying its own shape:
+
+        {"successful": false, "errors": [{"code": 100222,
+          "description": "Internal Error [Id: ...]", "message": "Internal Error",
+          "errorParams": {"Exception": "invalid email:Sandbox"}}]}
+
+    Reading only error/error_description surfaced that as "None: None", which
+    is worse than useless -- the actual cause ("invalid email", i.e. the
+    username must be an email address) sits in errorParams.Exception. Prefer
+    the most specific field available, and fall back to the raw body so a
+    shape we haven't seen is still diagnosable.
+    """
+    if data.get("error") or data.get("error_description"):
+        return f"{data.get('error')}: {data.get('error_description')}"
+
+    for err in (data.get("errors") or []):
+        params = err.get("errorParams") or {}
+        detail = params.get("Exception") or err.get("description") or err.get("message")
+        if detail:
+            code = err.get("code")
+            return f"{detail}" + (f" (code {code})" if code else "")
+
+    return (raw or "").strip()[:400] or "no detail in response"
+
+
 class UnicommerceConnectorSettings(Document):
     def validate(self):
         # old_enabled is the last-committed DB value, so this comparison has
@@ -93,12 +123,16 @@ class UnicommerceConnectorSettings(Document):
             self.token_type = data["token_type"]
             self.expires_on = add_to_date(now_datetime(), seconds=int(data["expires_in"]))
         else:
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                data = {}
             error, description = data.get("error"), data.get("error_description")
             if error and "invalid_grant" in error:
                 self._handle_refresh_token_expiry(grant_type=grant_type)
-            else:
-                frappe.throw(_("Unicommerce reported error: <br>{0}: {1}").format(error, description))
+                return
+            frappe.throw(_("Unicommerce reported error (HTTP {0}):<br>{1}").format(
+                res.status_code, _auth_error_detail(data, res.text)))
 
     def _handle_refresh_token_expiry(self, grant_type: str):
         """Refresh tokens expire every 30 days; only detectable via
