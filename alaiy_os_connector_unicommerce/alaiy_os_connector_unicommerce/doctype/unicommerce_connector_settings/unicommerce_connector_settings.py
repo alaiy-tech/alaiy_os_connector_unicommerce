@@ -128,7 +128,11 @@ class UnicommerceConnectorSettings(Document):
             except ValueError:
                 data = {}
             error, description = data.get("error"), data.get("error_description")
-            if error and "invalid_grant" in error:
+            # invalid_grant means two different things depending on the grant:
+            # an expired refresh token (recoverable -- retry with the password
+            # grant), or genuinely wrong credentials on a password grant, which
+            # is terminal and must surface.
+            if error and "invalid_grant" in error and grant_type != "password":
                 self._handle_refresh_token_expiry(grant_type=grant_type)
                 return
             frappe.throw(_("Unicommerce reported error (HTTP {0}):<br>{1}").format(
@@ -137,8 +141,6 @@ class UnicommerceConnectorSettings(Document):
     def _handle_refresh_token_expiry(self, grant_type: str):
         """Refresh tokens expire every 30 days; only detectable via
         `invalid_grant` in the error message."""
-        if grant_type == "password":
-            return
         self.update_tokens(grant_type="password")
 
     # -----------------------------------------------------------------
