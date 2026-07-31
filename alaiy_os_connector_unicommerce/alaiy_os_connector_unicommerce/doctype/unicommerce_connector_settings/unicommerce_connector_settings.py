@@ -95,7 +95,19 @@ class UnicommerceConnectorSettings(Document):
     # OAuth token lifecycle
     # -----------------------------------------------------------------
     def renew_tokens(self, save=True):
-        if now_datetime() >= get_datetime(self.expires_on):
+        # expires_on alone is not enough to decide the token is usable: a
+        # future expiry with no stored token (settings edited via db.set_value,
+        # after_install clearing the encrypted fields, a restore under a
+        # different site key) meant this skipped the fetch entirely, and the
+        # caller then died on "Password not found for ... access_token" --
+        # confirmed live. A missing or unparseable expiry must also force one.
+        expires_on = get_datetime(self.expires_on) if self.expires_on else None
+        needs_token = (
+            not self.get("access_token")
+            or expires_on is None
+            or now_datetime() >= expires_on
+        )
+        if needs_token:
             try:
                 self.update_tokens()
             except Exception:
