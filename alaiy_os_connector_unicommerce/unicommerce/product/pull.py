@@ -47,6 +47,13 @@ def _build_item_dict(uni_item: dict) -> dict:
         if _is_valid_field_value(erpnext_field, value):
             item_dict[erpnext_field] = value
 
+    # Unicommerce puts the full marketing name in `name` with no length cap,
+    # while Item.item_name is a Data field. Truncate rather than let Frappe
+    # throw CharacterLengthExceededError and lose the item entirely -- the
+    # untruncated text is still on the item's description.
+    if item_dict.get("item_name"):
+        item_dict["item_name"] = _fit_to_field("item_name", item_dict["item_name"])
+
     item_dict["barcodes"] = _barcode_rows(uni_item)
     item_dict["disabled"] = int(not uni_item.get("enabled"))
     item_dict["item_group"] = _resolve_item_group(uni_item.get("categoryCode"))
@@ -79,6 +86,14 @@ def _link_if_already_exists(uni_item: dict) -> bool:
 def _validate_create_brand(brand):
     if brand and not frappe.db.exists("Brand", brand):
         frappe.get_doc(doctype="Brand", brand=brand).insert(ignore_permissions=True)
+
+
+def _fit_to_field(fieldname: str, value: str) -> str:
+    """Truncate to the Item field's declared length. Reads the length from the
+    meta rather than hardcoding 140, so a site that widens the field keeps the
+    full value."""
+    length = frappe.get_meta("Item").get_field(fieldname).length or 140
+    return value[:length] if len(value) > length else value
 
 
 def _is_valid_field_value(fieldname: str, value) -> bool:
