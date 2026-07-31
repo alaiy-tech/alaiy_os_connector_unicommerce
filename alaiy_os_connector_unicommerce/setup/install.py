@@ -22,6 +22,12 @@ def after_install():
     (e.g. from a prior failed install), which otherwise surfaces as a
     'Failed to decrypt key' error on first load.
     """
+    # Must run first: install-app syncs the doctype but never calls
+    # after_migrate, so the settings doctype is still issingle=0 at this
+    # point and set_single_value below would write to tabSingles for a
+    # doctype Frappe doesn't yet treat as a Single.
+    _fix_settings_as_single()
+
     for fieldname in ("password", "access_token", "refresh_token"):
         frappe.db.set_single_value("Unicommerce Connector Settings", fieldname, "")
     frappe.db.commit()

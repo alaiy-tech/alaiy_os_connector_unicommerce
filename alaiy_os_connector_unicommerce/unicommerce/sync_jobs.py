@@ -9,12 +9,11 @@ enqueues a background job per sync type only when one is actually due.
 import frappe
 from frappe.utils import now_datetime, add_to_date
 
-_INTERVAL_MINUTES = {
-    "5 min": 5,
-    "15 min": 15,
-    "30 min": 30,
-    "60 min": 60,
-}
+# Both interval fields are Selects whose options are plain minute counts
+# ("10", "15", "30", "60"), so the value is parsed rather than mapped -- an
+# earlier hardcoded {"5 min": 5, ...} lookup table never matched a real
+# option, which silently disabled every scheduled sync.
+_MIN_INTERVAL_MINUTES = 1
 
 # A sync that has been "running" longer than this is treated as dead, so a
 # crashed job never blocks the schedule forever.
@@ -30,20 +29,29 @@ def check_and_enqueue():
         return
 
     _maybe_enqueue(
-        interval_setting=settings.unicommerce_pull_sync_interval or "Disabled",
+        interval_setting=settings.order_sync_frequency,
         sync_type="pull",
         enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_pull_sync",
     )
-    _maybe_enqueue(
-        interval_setting=settings.unicommerce_push_sync_interval or "Disabled",
-        sync_type="push",
-        enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
-    )
+    # Item push has no interval field of its own, so it rides order_sync_frequency.
+    # The toggle must be checked HERE: run_push_sync calls upload_new_items(force=True),
+    # which deliberately bypasses its own is_enabled/upload_item_to_unicommerce guard
+    # so the manual Force Sync button can override it. Without this check a scheduled
+    # run would push items even with the setting off.
+    if settings.upload_item_to_unicommerce:
+        _maybe_enqueue(
+            interval_setting=settings.order_sync_frequency,
+            sync_type="push",
+            enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
+        )
 
 
 def _maybe_enqueue(interval_setting, sync_type, enqueue_fn):
-    interval_minutes = _INTERVAL_MINUTES.get(interval_setting)
-    if not interval_minutes:  # "Disabled" or anything unrecognised
+    try:
+        interval_minutes = int(interval_setting)
+    except (TypeError, ValueError):
+        return  # unset, "Disabled", or anything non-numeric
+    if interval_minutes < _MIN_INTERVAL_MINUTES:
         return
 
     now = now_datetime()
