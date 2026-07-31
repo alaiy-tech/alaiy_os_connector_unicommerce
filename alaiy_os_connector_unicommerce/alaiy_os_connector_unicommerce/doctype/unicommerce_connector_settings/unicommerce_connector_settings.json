@@ -1,305 +1,307 @@
 {
-  "creation": "2026-07-20 00:00:00.000000",
-  "docstatus": 0,
-  "doctype": "DocType",
-  "editable_grid": 1,
-  "engine": "InnoDB",
-  "field_order": [
-    "is_enabled",
-    "unicommerce_site",
-    "column_break_2",
-    "username",
-    "password",
-    "client_id",
-    "authentication_details_section",
-    "access_token",
-    "refresh_token",
-    "column_break_8",
-    "expires_on",
-    "token_type",
-    "sb_defaults",
-    "unicommerce_company",
-    "default_customer_group",
-    "item_sync_settings_section",
-    "upload_item_to_unicommerce",
-    "default_item_group",
-    "sales_order_syncing_section",
-    "only_sync_completed_orders",
-    "order_sync_frequency",
-    "column_break_19",
-    "sales_order_series",
-    "sales_invoice_series",
-    "order_status_days",
-    "delivery_note_settings_section",
-    "delivery_note",
-    "inventory_sync_settings_section",
-    "enable_inventory_sync",
-    "inventory_sync_frequency",
-    "warehouse_mapping",
-    "grn_settings_section",
-    "use_stock_entry_for_grn",
-    "vendor_code",
-    "sync_status_section",
-    "last_order_sync",
-    "column_break_20",
-    "last_inventory_sync"
-  ],
-  "fields": [
-    {
-      "default": "0",
-      "fieldname": "is_enabled",
-      "fieldtype": "Check",
-      "label": "Enable Unicommerce"
-    },
-    {
-      "depends_on": "is_enabled",
-      "description": "E.g. frappe.unicommerce.com",
-      "fieldname": "unicommerce_site",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Unicommerce Site",
-      "mandatory_depends_on": "is_enabled"
-    },
-    {
-      "fieldname": "column_break_2",
-      "fieldtype": "Column Break"
-    },
-    {
-      "depends_on": "is_enabled",
-      "fieldname": "username",
-      "fieldtype": "Data",
-      "label": "Username",
-      "mandatory_depends_on": "is_enabled"
-    },
-    {
-      "depends_on": "is_enabled",
-      "fieldname": "password",
-      "fieldtype": "Password",
-      "label": "Password",
-      "mandatory_depends_on": "is_enabled"
-    },
-    {
-      "default": "my-trusted-client",
-      "depends_on": "is_enabled",
-      "fieldname": "client_id",
-      "fieldtype": "Data",
-      "label": "Client ID",
-      "mandatory_depends_on": "is_enabled"
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "authentication_details_section",
-      "fieldtype": "Section Break",
-      "label": "Authentication Details (auto-managed, do not edit)"
-    },
-    {
-      "fieldname": "access_token",
-      "fieldtype": "Password",
-      "label": "Access Token",
-      "read_only": 1
-    },
-    {
-      "fieldname": "refresh_token",
-      "fieldtype": "Password",
-      "label": "Refresh Token",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_8",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "expires_on",
-      "fieldtype": "Datetime",
-      "label": "Expires On",
-      "read_only": 1
-    },
-    {
-      "fieldname": "token_type",
-      "fieldtype": "Data",
-      "label": "Token Type",
-      "read_only": 1
-    },
-    {
-      "fieldname": "sb_defaults",
-      "fieldtype": "Section Break",
-      "label": "Alaiy OS Defaults"
-    },
-    {
-      "fieldname": "unicommerce_company",
-      "fieldtype": "Link",
-      "label": "Company",
-      "options": "Company",
-      "reqd": 1
-    },
-    {
-      "fieldname": "default_customer_group",
-      "fieldtype": "Link",
-      "label": "Default Customer Group",
-      "options": "Customer Group",
-      "reqd": 1
-    },
-    {
-      "fieldname": "item_sync_settings_section",
-      "fieldtype": "Section Break",
-      "label": "Item Sync Settings"
-    },
-    {
-      "default": "0",
-      "description": "If enabled, any new Item with \"Sync to Unicommerce\" checked is uploaded on a schedule.",
-      "fieldname": "upload_item_to_unicommerce",
-      "fieldtype": "Check",
-      "label": "Upload new items to Unicommerce"
-    },
-    {
-      "fieldname": "default_item_group",
-      "fieldtype": "Link",
-      "label": "Default Item Group",
-      "options": "Item Group"
-    },
-    {
-      "fieldname": "sales_order_syncing_section",
-      "fieldtype": "Section Break",
-      "label": "Sales Order Sync Settings"
-    },
-    {
-      "default": "0",
-      "description": "Only sync orders once they're fully processed on Unicommerce -- one-way sync from Unicommerce to Alaiy OS only.",
-      "fieldname": "only_sync_completed_orders",
-      "fieldtype": "Check",
-      "label": "Only Sync Completed Orders"
-    },
-    {
-      "default": "30",
-      "fieldname": "order_sync_frequency",
-      "fieldtype": "Select",
-      "label": "Order Sync Frequency (minutes)",
-      "options": "10\n15\n30\n60"
-    },
-    {
-      "fieldname": "column_break_19",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "sales_order_series",
-      "fieldtype": "Select",
-      "label": "Default Sales Order Series",
-      "reqd": 1
-    },
-    {
-      "fieldname": "sales_invoice_series",
-      "fieldtype": "Select",
-      "label": "Default Sales Invoice Series",
-      "reqd": 1
-    },
-    {
-      "default": "2",
-      "description": "Order status updated in the last N days will be synced.",
-      "fieldname": "order_status_days",
-      "fieldtype": "Int",
-      "label": "Sync Order Status Days",
-      "reqd": 1
-    },
-    {
-      "fieldname": "delivery_note_settings_section",
-      "fieldtype": "Section Break",
-      "label": "Delivery Note Settings"
-    },
-    {
-      "default": "0",
-      "fieldname": "delivery_note",
-      "fieldtype": "Check",
-      "label": "Import Delivery Notes from Unicommerce on Shipment"
-    },
-    {
-      "fieldname": "inventory_sync_settings_section",
-      "fieldtype": "Section Break",
-      "label": "Inventory Sync Settings"
-    },
-    {
-      "default": "0",
-      "fieldname": "enable_inventory_sync",
-      "fieldtype": "Check",
-      "label": "Enable Inventory Sync"
-    },
-    {
-      "default": "10",
-      "fieldname": "inventory_sync_frequency",
-      "fieldtype": "Select",
-      "label": "Inventory Sync Frequency (minutes)",
-      "options": "5\n10\n15\n30\n60"
-    },
-    {
-      "fieldname": "column_break_20",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "warehouse_mapping",
-      "fieldtype": "Table",
-      "label": "Warehouse Mapping",
-      "options": "Unicommerce Warehouses"
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "grn_settings_section",
-      "fieldtype": "Section Break",
-      "label": "GRN Settings"
-    },
-    {
-      "default": "0",
-      "description": "Material Transfer entries can be used for transferring stock to Unicommerce using the Auto GRN API.",
-      "fieldname": "use_stock_entry_for_grn",
-      "fieldtype": "Check",
-      "label": "Use Stock Entry for GRN"
-    },
-    {
-      "fieldname": "vendor_code",
-      "fieldtype": "Data",
-      "label": "Vendor Code"
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "sync_status_section",
-      "fieldtype": "Section Break",
-      "label": "Sync Status"
-    },
-    {
-      "fieldname": "last_order_sync",
-      "fieldtype": "Datetime",
-      "label": "Last Order Sync",
-      "read_only": 1
-    },
-    {
-      "fieldname": "last_inventory_sync",
-      "fieldtype": "Datetime",
-      "label": "Last Inventory Sync",
-      "read_only": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "is_single": 1,
-  "links": [],
-  "modified": "2026-07-24 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Alaiy Os Connector Unicommerce",
-  "name": "Unicommerce Connector Settings",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "System Manager",
-      "share": 1,
-      "write": 1
-    }
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": [],
-  "track_changes": 1
+ "creation": "2026-07-20 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "is_enabled",
+  "sb_connection",
+  "unicommerce_site",
+  "column_break_2",
+  "username",
+  "password",
+  "client_id",
+  "authentication_details_section",
+  "access_token",
+  "refresh_token",
+  "column_break_8",
+  "expires_on",
+  "token_type",
+  "sb_defaults",
+  "unicommerce_company",
+  "default_customer_group",
+  "item_sync_settings_section",
+  "upload_item_to_unicommerce",
+  "default_item_group",
+  "sales_order_syncing_section",
+  "only_sync_completed_orders",
+  "order_sync_frequency",
+  "column_break_19",
+  "sales_order_series",
+  "sales_invoice_series",
+  "order_status_days",
+  "delivery_note_settings_section",
+  "delivery_note",
+  "inventory_sync_settings_section",
+  "enable_inventory_sync",
+  "inventory_sync_frequency",
+  "warehouse_mapping",
+  "grn_settings_section",
+  "use_stock_entry_for_grn",
+  "vendor_code",
+  "sync_status_section",
+  "last_order_sync",
+  "column_break_20",
+  "last_inventory_sync"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Unicommerce"
+  },
+  {
+   "fieldname": "sb_connection",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "description": "E.g. frappe.unicommerce.com",
+   "fieldname": "unicommerce_site",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Unicommerce Site",
+   "mandatory_depends_on": "is_enabled"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "username",
+   "fieldtype": "Data",
+   "label": "Username",
+   "mandatory_depends_on": "is_enabled"
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "Password",
+   "mandatory_depends_on": "is_enabled"
+  },
+  {
+   "default": "my-trusted-client",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "mandatory_depends_on": "is_enabled"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "authentication_details_section",
+   "fieldtype": "Section Break",
+   "label": "Authentication Details (auto-managed, do not edit)"
+  },
+  {
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refresh_token",
+   "fieldtype": "Password",
+   "label": "Refresh Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_8",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Datetime",
+   "label": "Expires On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "token_type",
+   "fieldtype": "Data",
+   "label": "Token Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_defaults",
+   "fieldtype": "Section Break",
+   "label": "Alaiy OS Defaults"
+  },
+  {
+   "fieldname": "unicommerce_company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "default_customer_group",
+   "fieldtype": "Link",
+   "label": "Default Customer Group",
+   "options": "Customer Group",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_sync_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Item Sync Settings"
+  },
+  {
+   "default": "0",
+   "description": "If enabled, any new Item with \"Sync to Unicommerce\" checked is uploaded on a schedule.",
+   "fieldname": "upload_item_to_unicommerce",
+   "fieldtype": "Check",
+   "label": "Upload new items to Unicommerce"
+  },
+  {
+   "fieldname": "default_item_group",
+   "fieldtype": "Link",
+   "label": "Default Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "sales_order_syncing_section",
+   "fieldtype": "Section Break",
+   "label": "Sales Order Sync Settings"
+  },
+  {
+   "default": "0",
+   "description": "Only sync orders once they're fully processed on Unicommerce -- one-way sync from Unicommerce to Alaiy OS only.",
+   "fieldname": "only_sync_completed_orders",
+   "fieldtype": "Check",
+   "label": "Only Sync Completed Orders"
+  },
+  {
+   "default": "30",
+   "fieldname": "order_sync_frequency",
+   "fieldtype": "Select",
+   "label": "Order Sync Frequency (minutes)",
+   "options": "10\n15\n30\n60"
+  },
+  {
+   "fieldname": "column_break_19",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order_series",
+   "fieldtype": "Select",
+   "label": "Default Sales Order Series",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sales_invoice_series",
+   "fieldtype": "Select",
+   "label": "Default Sales Invoice Series",
+   "reqd": 1
+  },
+  {
+   "default": "2",
+   "description": "Order status updated in the last N days will be synced.",
+   "fieldname": "order_status_days",
+   "fieldtype": "Int",
+   "label": "Sync Order Status Days",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_note_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Delivery Note Settings"
+  },
+  {
+   "default": "0",
+   "fieldname": "delivery_note",
+   "fieldtype": "Check",
+   "label": "Import Delivery Notes from Unicommerce on Shipment"
+  },
+  {
+   "fieldname": "inventory_sync_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Inventory Sync Settings"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_inventory_sync",
+   "fieldtype": "Check",
+   "label": "Enable Inventory Sync"
+  },
+  {
+   "default": "10",
+   "fieldname": "inventory_sync_frequency",
+   "fieldtype": "Select",
+   "label": "Inventory Sync Frequency (minutes)",
+   "options": "5\n10\n15\n30\n60"
+  },
+  {
+   "fieldname": "column_break_20",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "warehouse_mapping",
+   "fieldtype": "Table",
+   "label": "Warehouse Mapping",
+   "options": "Unicommerce Warehouses"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "grn_settings_section",
+   "fieldtype": "Section Break",
+   "label": "GRN Settings"
+  },
+  {
+   "default": "0",
+   "description": "Material Transfer entries can be used for transferring stock to Unicommerce using the Auto GRN API.",
+   "fieldname": "use_stock_entry_for_grn",
+   "fieldtype": "Check",
+   "label": "Use Stock Entry for GRN"
+  },
+  {
+   "fieldname": "vendor_code",
+   "fieldtype": "Data",
+   "label": "Vendor Code"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "sync_status_section",
+   "fieldtype": "Section Break",
+   "label": "Sync Status"
+  },
+  {
+   "fieldname": "last_order_sync",
+   "fieldtype": "Datetime",
+   "label": "Last Order Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_inventory_sync",
+   "fieldtype": "Datetime",
+   "label": "Last Inventory Sync",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_single": 1,
+ "links": [],
+ "modified": "2026-07-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alaiy Os Connector Unicommerce",
+ "name": "Unicommerce Connector Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }
