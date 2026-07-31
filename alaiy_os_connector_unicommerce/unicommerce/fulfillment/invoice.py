@@ -370,8 +370,16 @@ def make_payment_entry(invoice, channel_config, invoice_posting_date=None):
 
 
 def fetch_label_pdf(package, invoicing_response, client, facility_code):
-    if invoicing_response and invoicing_response.get("shippingLabelLink"):
-        return fetch_pdf_as_base64(invoicing_response.get("shippingLabelLink"))
+    """createInvoiceAndGenerateLabel already returns the label as a base64
+    string directly (`label`) -- use that first and skip a redundant
+    download. Only fall back to fetching the link (older/marketplace-shipped
+    responses that don't carry `label`) or a fresh API call if neither is
+    present."""
+    invoicing_response = invoicing_response or {}
+    if invoicing_response.get("label"):
+        return invoicing_response["label"]
+    if invoicing_response.get("shippingLabelLink"):
+        return fetch_pdf_as_base64(invoicing_response["shippingLabelLink"])
     return get_invoice_label(client, package, facility_code)
 
 

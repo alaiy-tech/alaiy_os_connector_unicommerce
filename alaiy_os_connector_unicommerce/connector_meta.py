@@ -11,7 +11,7 @@ connector_meta = {
     "connector_type": "supplier",
     "description": "Unicommerce WMS/OMS connector",
     "icon": "box",
-    "icon_url": "",
+    "icon_url": "/assets/alaiy_os_connector_unicommerce/images/unicommerce-icon.svg",
     "settings_doctype": "Unicommerce Connector Settings",
     "test_method": "alaiy_os_connector_unicommerce.api.test_connection.test_connection",
     # The registry exposes two sync "slots". Map them to whatever your
