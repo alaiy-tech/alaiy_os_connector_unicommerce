@@ -78,11 +78,20 @@ def run(dry_run=True, limit=None, category_code=None, updated_since_hours=None):
 
     existing = created = failed = 0
     missing_skus = []
+    no_sku = []
+    walked = 0
     total = 0
 
     for el, total in _iter_catalogue(client, category_code, updated_since_hours, limit):
+        walked += 1
         sku = el.get("skuCode")
         if not sku:
+            # An item Unicommerce returns with no skuCode cannot be matched or
+            # created -- skuCode is the identity this connector keys on. Counted
+            # and listed rather than skipped in silence: it is the difference
+            # between "the catalogue is fully imported" and "part of it never can
+            # be, and nothing said so".
+            no_sku.append(el.get("name") or "<no name either>")
             continue
         if frappe.db.exists("Item", {ITEM_EXTERNAL_ID_FIELD: sku}) or frappe.db.exists("Item", sku):
             existing += 1
@@ -90,8 +99,28 @@ def run(dry_run=True, limit=None, category_code=None, updated_since_hours=None):
         missing_skus.append((sku, el.get("name") or ""))
 
     print(f"[bulk_import] catalogue: {total} items in Unicommerce")
+    print(f"  walked              : {walked}")
     print(f"  already in Alaiy OS : {existing}")
     print(f"  missing locally     : {len(missing_skus)}")
+    if no_sku:
+        print(f"  NO skuCode, cannot import: {len(no_sku)}")
+        for name in no_sku[:10]:
+            print(f"      {name[:70]}")
+        if len(no_sku) > 10:
+            print(f"      ... and {len(no_sku) - 10} more")
+
+    # The buckets must account for every row walked, or one of them is dropping
+    # items quietly -- which is the class of bug this reporting exists to catch.
+    unaccounted = walked - existing - len(missing_skus) - len(no_sku)
+    if unaccounted:
+        print(f"  WARNING: {unaccounted} item(s) walked but not accounted for")
+    if not limit and total and walked < total:
+        # Unicommerce reports the total on every page. Walking fewer than that
+        # means pagination ended early -- most likely the catalogue shifted
+        # underneath the walk, since display_start is an offset into a list that
+        # anything editing items at the same time can reorder.
+        print(f"  WARNING: walked {walked} of {total} reported -- pagination "
+              f"ended early, re-run before trusting the missing count")
 
     if dry_run:
         print("\n  first 20 missing:")
@@ -99,7 +128,8 @@ def run(dry_run=True, limit=None, category_code=None, updated_since_hours=None):
             print(f"    {sku!r:26} {name[:60]}")
         print("\n[bulk_import] DRY RUN -- nothing imported. "
               "Re-run with dry_run=False to create these Items.")
-        return
+        return {"total": total, "walked": walked, "existing": existing,
+                "missing": len(missing_skus), "no_sku": len(no_sku)}
 
     print(f"  started {frappe.utils.now()}\n")
     for i, (sku, name) in enumerate(missing_skus, 1):
@@ -125,4 +155,8 @@ def run(dry_run=True, limit=None, category_code=None, updated_since_hours=None):
     print(f"\n[bulk_import] done in {(time.monotonic() - started) / 60:.1f}m")
     print(f"  created: {created}")
     print(f"  skipped (already present): {existing}")
+    if no_sku:
+        print(f"  skipped (no skuCode)     : {len(no_sku)}")
     print(f"  failed : {failed}" + ("  <-- check Error Log" if failed else ""))
+    return {"total": total, "walked": walked, "existing": existing,
+            "created": created, "failed": failed, "no_sku": len(no_sku)}
