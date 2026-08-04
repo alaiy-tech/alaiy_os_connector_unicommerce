@@ -180,6 +180,14 @@ def _create_order(order: UnicommerceOrder, customer):
         ORDER_DISPLAY_CODE_FIELD: order.get("displayOrderCode"),
         ORDER_STATUS_FIELD: order["status"],
         CHANNEL_ID_FIELD: order["channel"],
+        # Generic cross-connector field (alaiy_os core), so a site running
+        # Shopify/Amazon/Unicommerce together can filter Sales Order by
+        # channel uniformly. Unicommerce itself aggregates several real
+        # channels, so this is the channel's own display_name, not a fixed
+        # "Unicommerce" constant -- CHANNEL_ID_FIELD above stays the precise
+        # Unicommerce-side identifier for anything that needs to round-trip
+        # back to a specific Unicommerce Channel doc.
+        "sales_channel": channel_config.display_name,
         FACILITY_CODE_FIELD: facility_code,
         IS_COD_CHECKBOX: bool(order["cod"]),
         "transaction_date": get_unicommerce_date(order["displayOrderDateTime"]),
