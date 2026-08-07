@@ -78,28 +78,35 @@ def run_full_purchase_order_import(client: UnicommerceClient = None):
 def sync_purchase_orders_for_range(created_from, created_to, client: UnicommerceClient = None):
     """Pull every Purchase Order created in [created_from, created_to] and
     upsert it. Returns created_to on success (the caller decides whether that
-    means anything as a checkpoint), or None if the search itself failed."""
+    means anything as a checkpoint), or None if no facility is configured."""
     if client is None:
         client = UnicommerceClient()
-
-    po_codes = search_purchase_orders(client, created_from=created_from, created_to=created_to)
-    if po_codes is None:
-        return None
 
     facility_codes = _get_facility_codes()
     if not facility_codes:
         frappe.log_error(
             title="Unicommerce: no facility configured, Purchase Order sync imported nothing",
             message=(
-                "Purchase Order sync found PO codes but no Unicommerce Warehouses row is "
-                "configured/enabled locally, so getPurchaseOrderDetails (which is scoped by "
-                "Facility header) has nothing to try. Add at least one Warehouse mapping."
+                "Purchase Order search/details are both Facility-scoped -- confirmed live, "
+                "despite the docs calling search Tenant-level -- and no Unicommerce Warehouses "
+                "row is configured/enabled locally. Add at least one Warehouse mapping."
             ),
         )
         return None
 
-    for po_code in po_codes:
-        create_or_update_purchase_order(po_code, client=client, facility_codes=facility_codes)
+    # Search itself is Facility-scoped (confirmed live -- see
+    # search_purchase_orders' docstring), so every configured facility is
+    # searched in turn; a PO code found under one facility is then fetched
+    # with THAT SAME facility, not re-tried across all of them.
+    po_codes_by_facility = {}
+    for facility_code in facility_codes:
+        codes = search_purchase_orders(
+            client, created_from=created_from, created_to=created_to, facility_code=facility_code)
+        for code in codes or []:
+            po_codes_by_facility.setdefault(code, facility_code)
+
+    for po_code, facility_code in po_codes_by_facility.items():
+        create_or_update_purchase_order(po_code, client=client, facility_codes=[facility_code])
 
     return created_to
 

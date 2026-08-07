@@ -11,8 +11,15 @@ capped only by the date-range filter, both ends of which are mandatory.
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import _utc_timeformat
 
 
-def search_purchase_orders(client, created_from, created_to, approved_from=None, approved_to=None):
+def search_purchase_orders(client, created_from, created_to, facility_code: str,
+                            approved_from=None, approved_to=None):
     """https://documentation.unicommerce.com/docs/purchaseorder_search.html
+
+    Documented as "Level: Tenant" (no Facility header needed) -- confirmed
+    live this is wrong for at least some tenants: a real call with no
+    Facility header 403'd with "Illegal Access, facility is required".
+    Facility-scoped, same as every other purchase/inflowReceipt endpoint
+    here, despite what the docs say.
 
     approvedBetween is mandatory on this endpoint even though createdBetween
     is the one we actually use for incremental sync -- default it to the
@@ -28,7 +35,11 @@ def search_purchase_orders(client, created_from, created_to, approved_from=None,
             "end": _utc_timeformat(approved_to or created_to),
         },
     }
-    result, ok = client.request(endpoint="/services/rest/v1/purchase/purchaseOrder/getPurchaseOrders", body=body)
+    result, ok = client.request(
+        endpoint="/services/rest/v1/purchase/purchaseOrder/getPurchaseOrders",
+        body=body,
+        headers={"Facility": facility_code},
+    )
     if ok and "purchaseOrderCodes" in result:
         return result["purchaseOrderCodes"]
 
