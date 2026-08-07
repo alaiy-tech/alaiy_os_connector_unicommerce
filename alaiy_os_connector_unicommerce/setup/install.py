@@ -137,7 +137,7 @@ def setup_custom_fields():
         ITEM_SHIPPING_CHARGE_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
         ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
-        ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD,
+        ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
         PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
         PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
         PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, SHIPPING_METHOD_FIELD,
@@ -344,8 +344,13 @@ def setup_custom_fields():
         "Purchase Order": [
             dict(fieldname=PO_CODE_FIELD, label="Unicommerce PO Code", fieldtype="Data",
                  insert_after="unicommerce_section", read_only=1, search_index=1, unique=1),
-            dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
+            dict(fieldname=PO_STATUS_FIELD, label="Unicommerce PO Status", fieldtype="Data",
                  insert_after=PO_CODE_FIELD, read_only=1,
+                 description="Unicommerce's own PO status (CREATED/APPROVED/COMPLETE/...) -- separate from "
+                             "this Purchase Order's own ERPNext workflow status (To Receive and Bill etc.), "
+                             "which reflects what's been received/billed here, not Unicommerce's approval state."),
+            dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
+                 insert_after=PO_STATUS_FIELD, read_only=1,
                  description="The Facility header used to fetch this PO -- Unicommerce's PO API doesn't "
                              "return a facility code in the payload itself, it's scoped by request header."),
             dict(fieldname=PO_CURRENCY_FIELD, label="Unicommerce Currency", fieldtype="Data",

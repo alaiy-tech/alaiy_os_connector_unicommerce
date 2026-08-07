@@ -5,10 +5,23 @@ Same get-or-create shape as customer.py's sync_customer -- Unicommerce
 doesn't dedupe vendors on its own either, so matching is done here by
 vendor_code, the one stable identifier the PO API gives us."""
 
+import re
+
 import frappe
 from frappe.utils.nestedset import get_root_of
 
 from alaiy_os_connector_unicommerce.unicommerce.constants import VENDOR_CODE_FIELD
+
+# Confirmed live: getPurchaseOrderDetails returns vendorName as a run of
+# asterisks for at least some tenants (the vendor's real legal name is
+# visible in Unicommerce's own admin UI but withheld from this API entirely
+# -- there's no "get vendor" endpoint to fetch it another way). Same masking
+# shape customer.py already handles for marketplace buyer names.
+_MASKED_RE = re.compile(r"^\*+$")
+
+
+def _is_masked(value) -> bool:
+    return bool(value) and bool(_MASKED_RE.match(str(value).strip()))
 
 
 def get_or_create_supplier(vendor_code: str, vendor_name: str):
@@ -16,6 +29,9 @@ def get_or_create_supplier(vendor_code: str, vendor_name: str):
         existing = frappe.db.get_value("Supplier", {VENDOR_CODE_FIELD: vendor_code})
         if existing:
             return frappe.get_doc("Supplier", existing)
+
+    if _is_masked(vendor_name):
+        vendor_name = None
 
     supplier = frappe.get_doc({
         "doctype": "Supplier",

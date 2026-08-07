@@ -27,7 +27,7 @@ from alaiy_os_connector_unicommerce.unicommerce.client.purchase_order import (
     get_purchase_order_details, search_purchase_orders,
 )
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    FACILITY_CODE_FIELD, ITEM_EXTERNAL_ID_FIELD, PO_CODE_FIELD, PO_CURRENCY_FIELD,
+    FACILITY_CODE_FIELD, ITEM_EXTERNAL_ID_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD, PO_CURRENCY_FIELD,
     PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD, PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD,
     PO_SYNCED_AT_FIELD, SETTINGS_DOCTYPE,
 )
@@ -187,6 +187,7 @@ def _create_purchase_order(data: dict, facility_code: str | None):
         "transaction_date": transaction_date,
         "schedule_date": schedule_date,
         PO_CODE_FIELD: data["code"],
+        PO_STATUS_FIELD: data.get("statusCode"),
         FACILITY_CODE_FIELD: facility_code,
         PO_CURRENCY_FIELD: _get_custom_field(data, "Currency"),
         PO_RAW_JSON_FIELD: frappe.as_json(data),
@@ -206,6 +207,7 @@ def _update_existing_purchase_order(po_name: str, data: dict, facility_code: str
     goods arrive, the raw payload, sync timestamp) are patched directly,
     without touching docstatus or re-submitting."""
     frappe.db.set_value("Purchase Order", po_name, {
+        PO_STATUS_FIELD: data.get("statusCode"),
         FACILITY_CODE_FIELD: facility_code,
         PO_CURRENCY_FIELD: _get_custom_field(data, "Currency"),
         PO_RAW_JSON_FIELD: frappe.as_json(data),
