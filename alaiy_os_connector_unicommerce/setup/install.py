@@ -40,6 +40,17 @@ def sync_connector_registry():
     """
     _fix_settings_as_single()
 
+    # Custom fields are otherwise only ever created the moment is_enabled
+    # flips from unchecked to checked (see the settings controller's
+    # _run_setup()) -- confirmed live: a site that was already enabled
+    # BEFORE a new field was added to setup_custom_fields() never got it,
+    # silently, until someone ran the function by hand in a console. Ensure
+    # on every migrate too, same shape as the Shopify connector's own
+    # sync_connector_registry -- create_custom_fields is idempotent, so this
+    # is cheap and safe to repeat.
+    if frappe.db.get_single_value("Unicommerce Connector Settings", "is_enabled"):
+        setup_custom_fields()
+
     if not frappe.db.exists("DocType", "OS Connector Registry"):
         return
 
