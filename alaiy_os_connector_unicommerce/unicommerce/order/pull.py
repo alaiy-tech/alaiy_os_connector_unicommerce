@@ -13,10 +13,10 @@ from frappe.utils import flt
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order, search_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    CHANNEL_ID_FIELD, CHANNEL_TAX_ACCOUNT_FIELD_MAP, FACILITY_CODE_FIELD, INVOICE_CODE_FIELD,
-    IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD,
-    ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
-    TAX_FIELDS_MAPPING, TAX_RATE_FIELDS_MAPPING,
+    CHANNEL_ID_FIELD, CHANNEL_TAX_ACCOUNT_FIELD_MAP, CUSTOMER_SHIPPING_CHARGE_FIELD, FACILITY_CODE_FIELD,
+    INVOICE_CODE_FIELD, IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ITEM_SHIPPING_CHARGE_FIELD,
+    ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD,
+    ORDER_STATUS_FIELD, SETTINGS_DOCTYPE, TAX_FIELDS_MAPPING, TAX_RATE_FIELDS_MAPPING,
 )
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
@@ -202,6 +202,7 @@ def _create_order(order: UnicommerceOrder, customer):
         "company_address": company_address,
         "dispatch_address_name": dispatch_address,
         "currency": order.get("currencyCode"),
+        CUSTOMER_SHIPPING_CHARGE_FIELD: get_order_shipping_charge(order),
     })
 
     so.flags.ignore_permissions = True
@@ -234,8 +235,36 @@ def _get_line_items(line_items: list, default_warehouse: str | None = None, is_c
             "warehouse": warehouse,
             ORDER_ITEM_CODE_FIELD: item.get("code"),
             ORDER_ITEM_BATCH_NO: _get_batch_no(item),
+            ITEM_SHIPPING_CHARGE_FIELD: get_item_shipping_charge(item),
         })
     return so_items
+
+
+def get_item_shipping_charge(item: dict) -> float:
+    """Customer-facing shipping charge for one line item -- NOT courier/
+    fulfillment cost. Same two fields get_taxes() already reads
+    (shippingCharges/shippingMethodCharges), just surfaced as a plain number
+    instead of folded into a tax row. Confirmed real values only exist on
+    invoice-stage line items (see get_taxes' docstring) -- 0 at Sales Order
+    stage, wired here anyway in case a differently-configured tenant sends it."""
+    return flt(item.get("shippingCharges")) + flt(item.get("shippingMethodCharges"))
+
+
+def get_order_shipping_charge(order: dict) -> float:
+    """Best-effort order-level shipping charge for whatever shape a given
+    Unicommerce tenant's payload actually carries -- checked in order of
+    likelihood, first match wins. Real, reliable value comes from summing
+    invoice-stage line items instead (see fulfillment/invoice.py); this is
+    only a fallback for the rare payload that carries it up front."""
+    order_price = order.get("orderPrice") or {}
+    if order_price.get("totalShippingCharges") is not None:
+        return flt(order_price["totalShippingCharges"])
+
+    shipping_package = order.get("shippingPackage") or {}
+    if shipping_package.get("shippingCharges") is not None:
+        return flt(shipping_package["shippingCharges"])
+
+    return sum(get_item_shipping_charge(item) for item in order.get("saleOrderItems") or [])
 
 
 def get_taxes(line_items: list, channel_config) -> list:

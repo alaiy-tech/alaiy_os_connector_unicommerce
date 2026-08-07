@@ -77,3 +77,22 @@ def run_push_sync(trigger="scheduled", log_name=None):
         upload_new_items(force=True)
 
     _run("push", trigger, log_name, worker)
+
+
+def run_po_sync(trigger="scheduled", log_name=None):
+    """Pull new Purchase Orders from Unicommerce into Alaiy OS."""
+    def worker(log):
+        from alaiy_os_connector_unicommerce.unicommerce.purchase_order.pull import sync_purchase_orders
+        sync_purchase_orders()
+
+    _run("purchase_order", trigger, log_name, worker)
+
+
+def run_grn_sync(trigger="scheduled", log_name=None):
+    """Pull new GRNs (goods received against a PO) from Unicommerce into
+    Alaiy OS Purchase Receipts."""
+    def worker(log):
+        from alaiy_os_connector_unicommerce.unicommerce.purchase_order.grn_pull import sync_grn_receipts
+        sync_grn_receipts()
+
+    _run("grn", trigger, log_name, worker)

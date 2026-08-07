@@ -40,10 +40,17 @@
   "grn_settings_section",
   "use_stock_entry_for_grn",
   "vendor_code",
+  "purchase_order_sync_settings_section",
+  "sync_purchase_orders",
+  "po_sync_frequency",
+  "po_sync_start_date",
+  "sync_grn_receipts",
   "sync_status_section",
   "last_order_sync",
   "column_break_20",
-  "last_inventory_sync"
+  "last_inventory_sync",
+  "last_po_sync",
+  "last_grn_sync"
  ],
  "fields": [
   {
@@ -261,6 +268,39 @@
   },
   {
    "collapsible": 1,
+   "fieldname": "purchase_order_sync_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Purchase Order Sync Settings"
+  },
+  {
+   "default": "0",
+   "description": "Pull Purchase Orders from Unicommerce into Alaiy OS on a schedule.",
+   "fieldname": "sync_purchase_orders",
+   "fieldtype": "Check",
+   "label": "Sync Purchase Orders"
+  },
+  {
+   "default": "30",
+   "fieldname": "po_sync_frequency",
+   "fieldtype": "Select",
+   "label": "Purchase Order Sync Frequency (minutes)",
+   "options": "10\n15\n30\n60"
+  },
+  {
+   "description": "First-run backfill window start. Leave blank to default to the Company's own creation date.",
+   "fieldname": "po_sync_start_date",
+   "fieldtype": "Date",
+   "label": "Purchase Order Sync Start Date"
+  },
+  {
+   "default": "0",
+   "description": "Pull GRNs (goods received against a Purchase Order) from Unicommerce into Alaiy OS Purchase Receipts, on the same schedule as Purchase Order sync.",
+   "fieldname": "sync_grn_receipts",
+   "fieldtype": "Check",
+   "label": "Sync GRN Receipts"
+  },
+  {
+   "collapsible": 1,
    "fieldname": "sync_status_section",
    "fieldtype": "Section Break",
    "label": "Sync Status"
@@ -275,6 +315,18 @@
    "fieldname": "last_inventory_sync",
    "fieldtype": "Datetime",
    "label": "Last Inventory Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_po_sync",
+   "fieldtype": "Datetime",
+   "label": "Last Purchase Order Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_grn_sync",
+   "fieldtype": "Datetime",
+   "label": "Last GRN Sync",
    "read_only": 1
   }
  ],

@@ -21,11 +21,12 @@ from alaiy_os_connector_unicommerce.unicommerce.client.invoicing import (
 )
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    CHANNEL_ID_FIELD, FACILITY_CODE_FIELD, INVOICE_CODE_FIELD, IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD,
-    ORDER_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, SETTINGS_DOCTYPE, SHIPPING_METHOD_FIELD,
+    CHANNEL_ID_FIELD, CUSTOMER_SHIPPING_CHARGE_FIELD, FACILITY_CODE_FIELD, INVOICE_CODE_FIELD,
+    IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ITEM_SHIPPING_CHARGE_FIELD, ORDER_CODE_FIELD,
+    ORDER_INVOICE_STATUS_FIELD, SETTINGS_DOCTYPE, SHIPPING_METHOD_FIELD,
     SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
 )
-from alaiy_os_connector_unicommerce.unicommerce.order.pull import get_taxes
+from alaiy_os_connector_unicommerce.unicommerce.order.pull import get_item_shipping_charge, get_taxes
 from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_date, remove_non_alphanumeric_chars
 
 JsonDict = dict[str, Any]
@@ -243,6 +244,8 @@ def create_sales_invoice(
     )
     si.set("items", si_line_items)
     si.set("taxes", get_taxes(uni_line_items, channel_config))
+    invoice_shipping_charge = sum(flt(row.get(ITEM_SHIPPING_CHARGE_FIELD)) for row in si_line_items)
+    si.set(CUSTOMER_SHIPPING_CHARGE_FIELD, invoice_shipping_charge)
     si.set(INVOICE_CODE_FIELD, si_data["code"])
     si.set(SHIPPING_PACKAGE_CODE_FIELD, shipping_package_code)
     si.set(SHIPPING_PROVIDER_CODE, shipping_provider_code)
@@ -260,6 +263,9 @@ def create_sales_invoice(
     si.update_stock = False if settings.delivery_note else update_stock
     si.flags.ignore_permissions = True
     si.insert()
+
+    if invoice_shipping_charge:
+        _backfill_shipping_charge_to_order(so, si_line_items)
 
     _verify_total(si, si_data)
 
@@ -306,7 +312,13 @@ def _get_line_items(
     si_items = []
     for item in line_items:
         item_code = frappe.db.get_value("Item", {ITEM_EXTERNAL_ID_FIELD: item["itemSku"]}, "name")
-        for __ in range(cint(item["quantity"])):
+        qty = cint(item["quantity"]) or 1
+        # This one Unicommerce line explodes into `qty` rows of 1 each below
+        # -- split its shipping charge evenly across them so summing the
+        # exploded rows back up reconstructs the original line's charge,
+        # rather than multiplying it by qty.
+        shipping_charge_per_row = get_item_shipping_charge(item) / qty
+        for __ in range(qty):
             si_items.append({
                 "item_code": item_code,
                 "rate": item["unitPrice"],  # discount already removed from this price
@@ -315,6 +327,7 @@ def _get_line_items(
                 "warehouse": warehouse,
                 "cost_center": cost_center,
                 "sales_order": so_code,
+                ITEM_SHIPPING_CHARGE_FIELD: shipping_charge_per_row,
             })
 
     if warehouse_allocations:
@@ -340,6 +353,51 @@ def _assign_wh_and_so_row(line_items, warehouse_allocation: list[ItemWHAlloc], s
         item["batch_no"] = wh_alloc.get("batch_no")
 
     return line_items
+
+
+def _backfill_shipping_charge_to_order(so, si_line_items: list) -> None:
+    """Shipping charge is only ever known at invoice time (see
+    get_item_shipping_charge's docstring) -- push it back onto the Sales
+    Order/Sales Order Item it originated from, same shape as
+    _backfill_display_order_code. Additive, not overwritten: an order
+    shipped across multiple packages/invoices gets more than one of these
+    calls, each covering only its own slice.
+    """
+    current = flt(frappe.db.get_value("Sales Order", so.name, CUSTOMER_SHIPPING_CHARGE_FIELD))
+    added = sum(flt(row.get(ITEM_SHIPPING_CHARGE_FIELD)) for row in si_line_items)
+    frappe.db.set_value("Sales Order", so.name, CUSTOMER_SHIPPING_CHARGE_FIELD, current + added, update_modified=False)
+
+    charge_by_item = {}
+    for row in si_line_items:
+        charge_by_item[row["item_code"]] = charge_by_item.get(row["item_code"], 0) + flt(row.get(ITEM_SHIPPING_CHARGE_FIELD))
+
+    for so_item in frappe.get_all("Sales Order Item", filters={"parent": so.name}, fields=["name", "item_code", ITEM_SHIPPING_CHARGE_FIELD]):
+        added_for_item = charge_by_item.get(so_item.item_code)
+        if not added_for_item:
+            continue
+        current_item = flt(so_item.get(ITEM_SHIPPING_CHARGE_FIELD))
+        frappe.db.set_value(
+            "Sales Order Item", so_item.name, ITEM_SHIPPING_CHARGE_FIELD, current_item + added_for_item,
+            update_modified=False,
+        )
+
+    _validate_shipping_charge_total(so.name)
+
+
+def _validate_shipping_charge_total(so_name: str) -> None:
+    """Same shape as _verify_total: leave a comment rather than raise if
+    SUM(order_items.shipping_charge) drifts from the order-level total --
+    the two are written in separate statements above (one order-level
+    increment, one per-item), so a partial failure between them is
+    detectable without failing the whole invoice."""
+    order_total = flt(frappe.db.get_value("Sales Order", so_name, CUSTOMER_SHIPPING_CHARGE_FIELD))
+    item_sum = flt(frappe.db.sql(
+        f"""SELECT COALESCE(SUM({ITEM_SHIPPING_CHARGE_FIELD}), 0) FROM `tabSales Order Item` WHERE parent = %s""",
+        so_name,
+    )[0][0])
+    if abs(order_total - item_sum) > 0.5:
+        frappe.get_doc("Sales Order", so_name).add_comment(
+            text=f"Shipping charge mismatch: order-level {order_total} vs item-level sum {item_sum}")
 
 
 def _verify_total(si, si_data) -> None:
