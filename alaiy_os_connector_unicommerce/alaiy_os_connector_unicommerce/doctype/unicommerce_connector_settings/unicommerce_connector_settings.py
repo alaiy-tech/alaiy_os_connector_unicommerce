@@ -114,10 +114,32 @@ class UnicommerceConnectorSettings(Document):
                 frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
                 raise
         if save:
+            self._save_retry_once()
+
+    def _save_retry_once(self):
+        """Confirmed live: two concurrent processes (a sync job that already
+        held this doc plus a manual console session, or two overlapping sync
+        jobs) can each call renew_tokens() against their own in-memory copy --
+        whichever saves second hits TimestampMismatchError. Retry once
+        against a freshly-reloaded doc instead of raising, same shape as
+        the Shopify connector's own retry-once-on-conflict convention."""
+        try:
             self.flags.ignore_permissions = True
             self.save()
+        except frappe.TimestampMismatchError:
+            frappe.db.rollback()
+            fresh = frappe.get_doc(self.doctype, self.name)
+            fresh.access_token = self.access_token
+            fresh.refresh_token = self.refresh_token
+            fresh.expires_on = self.expires_on
+            fresh.token_type = self.token_type
+            fresh.flags.ignore_permissions = True
+            fresh.save()
             frappe.db.commit()
             self.load_from_db()
+            return
+        frappe.db.commit()
+        self.load_from_db()
 
     def update_tokens(self, grant_type="password"):
         url = f"https://{self.unicommerce_site}/oauth/token"

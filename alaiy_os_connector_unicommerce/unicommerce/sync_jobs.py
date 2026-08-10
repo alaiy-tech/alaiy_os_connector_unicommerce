@@ -45,6 +45,23 @@ def check_and_enqueue():
             enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
         )
 
+    if settings.sync_purchase_orders:
+        _maybe_enqueue(
+            interval_setting=settings.po_sync_frequency,
+            sync_type="purchase_order",
+            enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_po_sync",
+        )
+        # GRN rides the same interval/toggle-gate as Purchase Orders (the
+        # settings field description says so) but is its own sync_type/log
+        # row -- a stuck or failed GRN run must not block PO sync, and vice
+        # versa.
+        if settings.sync_grn_receipts:
+            _maybe_enqueue(
+                interval_setting=settings.po_sync_frequency,
+                sync_type="grn",
+                enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_grn_sync",
+            )
+
 
 def _maybe_enqueue(interval_setting, sync_type, enqueue_fn):
     try:

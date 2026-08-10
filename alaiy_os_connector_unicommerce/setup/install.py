@@ -40,6 +40,17 @@ def sync_connector_registry():
     """
     _fix_settings_as_single()
 
+    # Custom fields are otherwise only ever created the moment is_enabled
+    # flips from unchecked to checked (see the settings controller's
+    # _run_setup()) -- confirmed live: a site that was already enabled
+    # BEFORE a new field was added to setup_custom_fields() never got it,
+    # silently, until someone ran the function by hand in a console. Ensure
+    # on every migrate too, same shape as the Shopify connector's own
+    # sync_connector_registry -- create_custom_fields is idempotent, so this
+    # is cheap and safe to repeat.
+    if frappe.db.get_single_value("Unicommerce Connector Settings", "is_enabled"):
+        setup_custom_fields()
+
     if not frappe.db.exists("DocType", "OS Connector Registry"):
         return
 
@@ -121,13 +132,17 @@ def setup_custom_fields():
     from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
     from alaiy_os_connector_unicommerce.unicommerce.constants import (
-        ADDRESS_JSON_FIELD, CHANNEL_ID_FIELD, CUSTOMER_CODE_FIELD, FACILITY_CODE_FIELD,
+        ADDRESS_JSON_FIELD, CHANNEL_ID_FIELD, CUSTOMER_CODE_FIELD, CUSTOMER_SHIPPING_CHARGE_FIELD,
+        FACILITY_CODE_FIELD, GRN_CODE_FIELD, GRN_RAW_JSON_FIELD, GRN_SYNCED_AT_FIELD,
+        ITEM_SHIPPING_CHARGE_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
         ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
-        ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD,
+        ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
+        PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
+        PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
         PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, SHIPPING_METHOD_FIELD,
         SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE,
-        TRACKING_CODE_FIELD, UNICOMMERCE_SHIPPING_ID,
+        TRACKING_CODE_FIELD, UNICOMMERCE_SHIPPING_ID, VENDOR_CODE_FIELD,
     )
 
     item_fields = [
@@ -222,6 +237,24 @@ def setup_custom_fields():
                 collapsible=1,
             ),
         ],
+        "Purchase Order": [
+            dict(
+                fieldname="unicommerce_section",
+                label="Unicommerce Details",
+                fieldtype="Section Break",
+                insert_after="naming_series",
+                collapsible=1,
+            ),
+        ],
+        "Purchase Receipt": [
+            dict(
+                fieldname="unicommerce_section",
+                label="Unicommerce Details",
+                fieldtype="Section Break",
+                insert_after="naming_series",
+                collapsible=1,
+            ),
+        ],
     }
 
     custom_fields = {
@@ -240,12 +273,18 @@ def setup_custom_fields():
                  fieldtype="Small Text", insert_after=ORDER_STATUS_FIELD, read_only=1),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
                  options="Unicommerce Package Type", insert_after=ORDER_INVOICE_STATUS_FIELD, allow_on_submit=1),
+            dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",
+                 fieldtype="Currency", insert_after=PACKAGE_TYPE_FIELD, read_only=1, allow_on_submit=1,
+                 description="What the customer was charged for shipping -- NOT courier/fulfillment cost. "
+                             "Real value only appears once invoiced; backfilled here from the invoice."),
         ],
         "Sales Order Item": [
             dict(fieldname=ORDER_ITEM_CODE_FIELD, label="Unicommerce Order Item Code", fieldtype="Data",
                  insert_after="item_code", read_only=1),
             dict(fieldname=ORDER_ITEM_BATCH_NO, label="Unicommerce Batch Code", fieldtype="Data",
                  insert_after=ORDER_ITEM_CODE_FIELD, read_only=1),
+            dict(fieldname=ITEM_SHIPPING_CHARGE_FIELD, label="Unicommerce Shipping Charge", fieldtype="Currency",
+                 insert_after=ORDER_ITEM_BATCH_NO, read_only=1),
         ],
         "Customer": [
             dict(fieldname=ADDRESS_JSON_FIELD, label="Unicommerce raw billing address", fieldtype="Text",
@@ -282,6 +321,13 @@ def setup_custom_fields():
                  insert_after=MANIFEST_GENERATED_CHECK, read_only=1),
             dict(fieldname=RETURN_CODE_FIELD, label="Unicommerce Return Code", fieldtype="Small Text",
                  insert_after=IS_COD_CHECKBOX, read_only=1),
+            dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",
+                 fieldtype="Currency", insert_after=RETURN_CODE_FIELD, read_only=1,
+                 description="What the customer was charged for shipping -- NOT courier/fulfillment cost."),
+        ],
+        "Sales Invoice Item": [
+            dict(fieldname=ITEM_SHIPPING_CHARGE_FIELD, label="Unicommerce Shipping Charge", fieldtype="Currency",
+                 insert_after="item_code", read_only=1),
         ],
         "Delivery Note": [
             dict(fieldname=ORDER_CODE_FIELD, label="Unicommerce Order No", fieldtype="Data",
@@ -294,6 +340,49 @@ def setup_custom_fields():
         "Pick List": [
             dict(fieldname=PICKLIST_ORDER_DETAILS_FIELD, label="Order Details", fieldtype="Table",
                  options="Pick List Unicommerce Order Detail"),
+        ],
+        "Purchase Order": [
+            dict(fieldname=PO_CODE_FIELD, label="Unicommerce PO Code", fieldtype="Data",
+                 insert_after="unicommerce_section", read_only=1, search_index=1, unique=1),
+            dict(fieldname=PO_STATUS_FIELD, label="Unicommerce PO Status", fieldtype="Data",
+                 insert_after=PO_CODE_FIELD, read_only=1,
+                 description="Unicommerce's own PO status (CREATED/APPROVED/COMPLETE/...) -- separate from "
+                             "this Purchase Order's own ERPNext workflow status (To Receive and Bill etc.), "
+                             "which reflects what's been received/billed here, not Unicommerce's approval state."),
+            dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
+                 insert_after=PO_STATUS_FIELD, read_only=1,
+                 description="The Facility header used to fetch this PO -- Unicommerce's PO API doesn't "
+                             "return a facility code in the payload itself, it's scoped by request header."),
+            dict(fieldname=PO_CURRENCY_FIELD, label="Unicommerce Currency", fieldtype="Data",
+                 insert_after=FACILITY_CODE_FIELD, read_only=1,
+                 description="Only present if the tenant configured a \"Currency\" custom field on the PO."),
+            dict(fieldname=PO_SYNCED_AT_FIELD, label="Unicommerce Synced At", fieldtype="Datetime",
+                 insert_after=PO_CURRENCY_FIELD, read_only=1),
+            dict(fieldname=PO_RAW_JSON_FIELD, label="Unicommerce Raw API Response", fieldtype="Code",
+                 options="JSON", insert_after=PO_SYNCED_AT_FIELD, read_only=1, hidden=1),
+        ],
+        "Purchase Order Item": [
+            dict(fieldname=PO_ITEM_SKU_FIELD, label="Unicommerce SKU Code", fieldtype="Data",
+                 insert_after="item_code", read_only=1),
+            dict(fieldname=PO_ITEM_RECEIVED_QTY_FIELD, label="Unicommerce Received Qty", fieldtype="Float",
+                 insert_after=PO_ITEM_SKU_FIELD, read_only=1,
+                 description="Not exposed directly by Unicommerce's PO API -- derived as ordered - pending - rejected."),
+            dict(fieldname=PO_ITEM_PENDING_QTY_FIELD, label="Unicommerce Pending Qty", fieldtype="Float",
+                 insert_after=PO_ITEM_RECEIVED_QTY_FIELD, read_only=1),
+        ],
+        "Supplier": [
+            dict(fieldname=VENDOR_CODE_FIELD, label="Unicommerce Vendor Code", fieldtype="Data",
+                 insert_after="naming_series", read_only=1, search_index=1),
+        ],
+        "Purchase Receipt": [
+            dict(fieldname=GRN_CODE_FIELD, label="Unicommerce GRN Code", fieldtype="Data",
+                 insert_after="unicommerce_section", read_only=1, search_index=1, unique=1),
+            dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
+                 insert_after=GRN_CODE_FIELD, read_only=1),
+            dict(fieldname=GRN_SYNCED_AT_FIELD, label="Unicommerce Synced At", fieldtype="Datetime",
+                 insert_after=FACILITY_CODE_FIELD, read_only=1),
+            dict(fieldname=GRN_RAW_JSON_FIELD, label="Unicommerce Raw API Response", fieldtype="Code",
+                 options="JSON", insert_after=GRN_SYNCED_AT_FIELD, read_only=1, hidden=1),
         ],
     }
 

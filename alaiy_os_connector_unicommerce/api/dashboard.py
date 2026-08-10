@@ -89,6 +89,45 @@ def trigger_item_group_sync():
 
 
 @frappe.whitelist()
+def trigger_purchase_order_sync(from_date: str | None = None, to_date: str | None = None):
+    """Enqueue a Purchase Order sync. With no dates, pulls the tenant's
+    entire PO history (chunked). With both dates, pulls just that range --
+    for a manual backfill of a specific window without waiting on the
+    scheduled incremental job."""
+    if from_date and to_date:
+        frappe.enqueue(
+            "alaiy_os_connector_unicommerce.unicommerce.purchase_order.pull.sync_purchase_orders_for_range",
+            queue="long", timeout=3600, created_from=from_date, created_to=to_date,
+        )
+        return {"queued": True, "message": f"Purchase Order sync queued for {from_date} to {to_date}."}
+
+    frappe.enqueue(
+        "alaiy_os_connector_unicommerce.unicommerce.purchase_order.pull.run_full_purchase_order_import",
+        queue="long", timeout=7200,
+    )
+    return {"queued": True, "message": "Full Purchase Order history import queued."}
+
+
+@frappe.whitelist()
+def trigger_grn_sync(from_date: str | None = None, to_date: str | None = None):
+    """Enqueue a GRN sync. Same shape as trigger_purchase_order_sync --
+    referencing Purchase Orders must already be synced locally, or a GRN
+    that points at one not found here is logged and skipped."""
+    if from_date and to_date:
+        frappe.enqueue(
+            "alaiy_os_connector_unicommerce.unicommerce.purchase_order.grn_pull.sync_grn_receipts_for_range",
+            queue="long", timeout=3600, created_from=from_date, created_to=to_date,
+        )
+        return {"queued": True, "message": f"GRN sync queued for {from_date} to {to_date}."}
+
+    frappe.enqueue(
+        "alaiy_os_connector_unicommerce.unicommerce.purchase_order.grn_pull.run_full_grn_import",
+        queue="long", timeout=7200,
+    )
+    return {"queued": True, "message": "Full GRN history import queued."}
+
+
+@frappe.whitelist()
 def get_recent_logs(limit: int = 10) -> list:
     """Recent sync log rows for the page's log table."""
     return frappe.get_all(
