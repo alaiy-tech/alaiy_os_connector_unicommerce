@@ -132,6 +132,16 @@ def _create_customer_address(uni_address: dict, address_type: str, customer, als
         "links": [{"link_doctype": "Customer", "link_name": customer.name}],
         "is_primary_address": int(address_type == "Billing"),
         "is_shipping_address": int(also_shipping or address_type == "Shipping"),
+        # ERPNext core's Address.validate() (accounts/custom/address.py)
+        # reads self.is_your_company_address unconditionally -- on a site
+        # where that field is genuinely absent from the doctype (confirmed
+        # live: frappe.get_meta("Address").get_field(...) returns None even
+        # after a fresh migrate), accessing it raises AttributeError instead
+        # of reading as falsy, crashing every single order's address
+        # creation. This is a customer's own address, never the company's,
+        # so 0 is also the semantically correct value here, not just a
+        # workaround for the missing field.
+        "is_your_company_address": 0,
     }).insert(ignore_mandatory=True)
 
 
