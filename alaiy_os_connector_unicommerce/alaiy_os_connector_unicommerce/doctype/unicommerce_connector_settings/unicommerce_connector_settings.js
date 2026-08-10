@@ -1,4 +1,20 @@
 frappe.ui.form.on("Unicommerce Connector Settings", {
+  onload(frm) {
+    // sales_order_series / sales_invoice_series are plain Select fields with
+    // no static options in the doctype JSON (real naming series are per-site)
+    // -- same convention as Unicommerce Channel's own series fields, which
+    // populate via this same whitelisted method. This doctype had the fields
+    // but never got the matching onload call, so the dropdowns were always
+    // empty.
+    frappe.call({
+      method: "alaiy_os_connector_unicommerce.unicommerce.utils.get_naming_series_options",
+      callback: function (r) {
+        $.each(r.message, (key, value) => {
+          set_field_options(key, value);
+        });
+      },
+    });
+  },
   refresh(frm) {
     frm.page.set_title(__("Unicommerce Settings"));
 
