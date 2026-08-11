@@ -21,7 +21,7 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
-    get_dummy_tax_category, get_unicommerce_date, need_to_run,
+    ensure_multiple_items_allowed, get_dummy_tax_category, get_unicommerce_date, need_to_run,
 )
 
 UnicommerceOrder = NewType("UnicommerceOrder", dict[str, Any])
@@ -167,6 +167,7 @@ def _sync_order_items(order: UnicommerceOrder, client: UnicommerceClient) -> set
 def _create_order(order: UnicommerceOrder, customer):
     channel_config = frappe.get_doc("Unicommerce Channel", order["channel"])
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
+    ensure_multiple_items_allowed()
 
     is_cancelled = order["status"] == "CANCELLED"
     facility_code = _get_facility_code(order["saleOrderItems"])

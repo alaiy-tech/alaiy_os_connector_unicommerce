@@ -95,6 +95,19 @@ def get_dummy_tax_category() -> str:
     return DUMMY_TAX_CATEGORY
 
 
+def ensure_multiple_items_allowed() -> None:
+    """A single Unicommerce order can carry the same SKU across more than one
+    saleOrderItems line (different batches, partial allocations) -- ERPNext
+    rejects a Sales Order with the same item on multiple rows unless this
+    core Selling Settings toggle is on. Confirmed live: a fresh/local site
+    missing this one setting crashes every order carrying a repeated SKU
+    with a "entered multiple times" error, not something specific to this
+    connector's own settings doctype. Self-heals it once rather than making
+    every affected order fail until someone finds the right settings page."""
+    if not frappe.db.get_single_value("Selling Settings", "allow_multiple_items"):
+        frappe.db.set_value("Selling Settings", None, "allow_multiple_items", 1)
+
+
 def validate_tax_template(doc, method=None):
     """Item validate hook: prevent the dummy tax category from being used in
     a real Item Tax Template (it must only ever be set directly on a
