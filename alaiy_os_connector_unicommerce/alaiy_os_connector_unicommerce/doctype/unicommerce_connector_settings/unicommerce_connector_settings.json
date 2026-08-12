@@ -183,7 +183,7 @@
    "fieldname": "order_sync_frequency",
    "fieldtype": "Select",
    "label": "Order Sync Frequency (minutes)",
-   "options": "10\n15\n30\n60"
+   "options": "1\n5\n10\n15\n30\n60"
   },
   {
    "fieldname": "column_break_19",
