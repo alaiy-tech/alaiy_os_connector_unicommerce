@@ -19,8 +19,25 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 
 @frappe.whitelist()
 def get_dashboard_stats() -> dict:
-    """Counts drawn from the local site only -- no Unicommerce calls."""
+    """Counts drawn from the local site only -- no Unicommerce calls.
+
+    On a site where the connector is installed but has never been enabled,
+    setup.install.setup_custom_fields() has never run, so
+    unicommerce_order_code and friends don't exist as real columns yet --
+    every stat query below would crash the whole page with an
+    OperationalError on first visit. Confirmed live on multiple sites.
+    Detect that state once and return zeroed stats with a flag instead.
+    """
+    if not frappe.get_meta("Sales Order").has_field(ORDER_CODE_FIELD):
+        return {
+            "setup_required": True,
+            "items_total": 0, "items_from_unicommerce": 0, "items_flagged_for_push": 0,
+            "item_groups_mapped": 0, "orders_synced": 0, "invoices_synced": 0,
+            "channels_enabled": 0, "channels_total": 0, "warehouse_mappings": 0,
+        }
+
     return {
+        "setup_required": False,
         "items_total": frappe.db.count("Item"),
         "items_from_unicommerce": frappe.db.count("Item", {ITEM_EXTERNAL_ID_FIELD: (">", "")}),
         "items_flagged_for_push": frappe.db.count("Item", {ITEM_SYNC_CHECKBOX: 1}),

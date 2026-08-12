@@ -6,10 +6,10 @@ Install / migrate plumbing shared by every Alaiy OS connector:
   after_install            -> one-time cleanup on `bench install-app`
   sync_connector_registry  -> (re)register in OS Connector Registry (every migrate)
 
-Heavy setup (custom fields, price lists, ...) intentionally does NOT run on
-migrate. It runs once, lazily, the first time the connector is enabled from
-its settings form (see the doctype controller's _run_setup()), so installing
-the app is cheap and non-destructive until an admin opts in.
+Custom field setup runs unconditionally on every migrate (idempotent), same
+as the Shopify connector's own sync_connector_registry -- so installing the
+app and running `bench migrate` is enough on its own, no separate "enable
+the connector first" step required before the doctype schema is real.
 """
 
 import frappe
@@ -40,16 +40,14 @@ def sync_connector_registry():
     """
     _fix_settings_as_single()
 
-    # Custom fields are otherwise only ever created the moment is_enabled
-    # flips from unchecked to checked (see the settings controller's
-    # _run_setup()) -- confirmed live: a site that was already enabled
-    # BEFORE a new field was added to setup_custom_fields() never got it,
-    # silently, until someone ran the function by hand in a console. Ensure
-    # on every migrate too, same shape as the Shopify connector's own
-    # sync_connector_registry -- create_custom_fields is idempotent, so this
-    # is cheap and safe to repeat.
-    if frappe.db.get_single_value("Unicommerce Connector Settings", "is_enabled"):
-        setup_custom_fields()
+    # Unconditional on every migrate, same shape as the Shopify connector's
+    # own sync_connector_registry -- create_custom_fields is idempotent, so
+    # this is cheap and safe to repeat. Previously gated behind is_enabled,
+    # which meant any page assuming these fields exist (e.g. the dashboard's
+    # get_dashboard_stats) crashed with a raw OperationalError on any site
+    # where the connector was installed but never enabled -- confirmed
+    # hitting multiple real users independently, not a one-site fluke.
+    setup_custom_fields()
 
     if not frappe.db.exists("DocType", "OS Connector Registry"):
         return

@@ -39,6 +39,7 @@ def import_product_from_unicommerce(sku: str, client: UnicommerceClient = None) 
 
 
 def _build_item_dict(uni_item: dict) -> dict:
+    _ensure_uom(DEFAULT_WEIGHT_UOM)
     item_dict = {"weight_uom": DEFAULT_WEIGHT_UOM}
     _validate_create_brand(uni_item.get("brand"))
 
@@ -86,6 +87,15 @@ def _link_if_already_exists(uni_item: dict) -> bool:
 def _validate_create_brand(brand):
     if brand and not frappe.db.exists("Brand", brand):
         frappe.get_doc(doctype="Brand", brand=brand).insert(ignore_permissions=True)
+
+
+def _ensure_uom(uom):
+    """A fresh site's default UOM list doesn't include every unit
+    Unicommerce reports (e.g. Gram) -- confirmed live, product import
+    crashed with LinkValidationError on Item.weight_uom. Same self-heal
+    shape as _validate_create_brand above."""
+    if uom and not frappe.db.exists("UOM", uom):
+        frappe.get_doc(doctype="UOM", uom_name=uom).insert(ignore_permissions=True)
 
 
 def _fit_to_field(fieldname: str, value: str) -> str:
