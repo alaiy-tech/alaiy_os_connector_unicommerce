@@ -33,7 +33,7 @@ from frappe.utils import cint, flt
 
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.inventory import get_inventory_snapshot
-from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD, ITEM_SYNC_CHECKBOX, SETTINGS_DOCTYPE
+from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD, SETTINGS_DOCTYPE
 from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
 MAX_SKUS_PER_REQUEST = 10000  # Unicommerce's own documented limit per call
@@ -111,13 +111,18 @@ def _pull_warehouse(client, warehouse, facility_code):
 
 
 def _get_synced_items() -> dict:
-    """unicommerce_sku -> item_code, for every Item flagged to sync with
-    Unicommerce -- same filter push.py uses for the opposite direction."""
+    """unicommerce_sku -> item_code, for every Item that actually has a
+    Unicommerce SKU mapped. push.py's ITEM_SYNC_CHECKBOX ("Sync to
+    Unicommerce") gate was tried here first and confirmed empty on real
+    data (0 Items have it checked on Globali, so push.py itself was
+    already a no-op) -- that flag is an opt-in for pushing OUT, not a
+    signal for whether an item's real stock should be pulled IN. Any
+    Item with a real SKU identity should have its stock kept accurate."""
     Item = DocType("Item")
     rows = (
         frappe.qb.from_(Item)
         .select(Item[ITEM_EXTERNAL_ID_FIELD].as_("sku"), Item.name.as_("item_code"))
-        .where((Item[ITEM_SYNC_CHECKBOX] == 1) & (Item[ITEM_EXTERNAL_ID_FIELD] != ""))
+        .where(Item[ITEM_EXTERNAL_ID_FIELD] != "")
         .run(as_dict=1)
     )
     return {row.sku: row.item_code for row in rows}
