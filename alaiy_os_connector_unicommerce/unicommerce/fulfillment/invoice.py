@@ -288,8 +288,21 @@ def create_sales_invoice(
 
     if submit:
         si.submit()
+        # Commit right away -- confirmed live that a make_payment_entry
+        # failure immediately after submit() (e.g. its own "already fully
+        # paid" false-positive on freshly-submitted data) rolled back this
+        # invoice's own GL Entries along with it, leaving a submitted
+        # (docstatus=1) Sales Invoice with zero accounting entries. The
+        # invoice succeeding must never be undone by a payment step failing.
+        frappe.db.commit()
 
-    make_payment_entry(si, channel_config, si.posting_date)
+    try:
+        make_payment_entry(si, channel_config, si.posting_date)
+    except Exception:
+        frappe.log_error(
+            title=f"Unicommerce: failed to create Payment Entry for {si.name}",
+            message=frappe.get_traceback(),
+        )
 
     return si
 
