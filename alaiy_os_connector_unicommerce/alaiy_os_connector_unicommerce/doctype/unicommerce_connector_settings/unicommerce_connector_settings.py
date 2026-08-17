@@ -107,12 +107,20 @@ class UnicommerceConnectorSettings(Document):
             or expires_on is None
             or now_datetime() >= expires_on
         )
-        if needs_token:
-            try:
-                self.update_tokens()
-            except Exception:
-                frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
-                raise
+        if not needs_token:
+            return
+
+        try:
+            self.update_tokens()
+        except Exception:
+            frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
+            raise
+        # Only save when a token was actually fetched -- every UnicommerceClient()
+        # construction calls renew_tokens(), so saving unconditionally meant every
+        # single client instantiation (thousands per large pull run) wrote to this
+        # one shared settings row, even when nothing changed. That's real lock
+        # contention at scale, confirmed live (migrate and other jobs blocked
+        # waiting on this row). Skipping the no-op save removes nearly all of it.
         if save:
             self._save_retry_once()
 
