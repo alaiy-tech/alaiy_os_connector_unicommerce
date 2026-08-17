@@ -192,7 +192,10 @@ def _fetch_and_sync_invoice(
         create_sales_invoice(
             invoice_data,
             erpnext_so_code,
-            update_stock=1,
+            # See the matching note in order/pull.py -- stock accuracy is a
+            # known, separate gap being fixed independently; invoicing and
+            # payment status should not be blocked on it.
+            update_stock=0,
             shipping_label=label_pdf,
             warehouse_allocations=warehouse_allocation,
             invoice_response=invoice_response,
@@ -286,8 +289,7 @@ def create_sales_invoice(
     if submit:
         si.submit()
 
-    if cint(channel_config.auto_payment_entry):
-        make_payment_entry(si, channel_config, si.posting_date)
+    make_payment_entry(si, channel_config, si.posting_date)
 
     return si
 
@@ -423,8 +425,7 @@ def make_payment_entry(invoice, channel_config, invoice_posting_date=None):
     payment_entry.reference_date = invoice_posting_date or nowdate()
 
     payment_entry.insert(ignore_permissions=True)
-    if channel_config.submit_payment_entry:
-        payment_entry.submit()
+    payment_entry.submit()
 
 
 def fetch_label_pdf(package, invoicing_response, client, facility_code):

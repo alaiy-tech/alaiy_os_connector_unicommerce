@@ -127,7 +127,12 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
             create_sales_invoice(
                 invoice_data["invoice"],
                 sales_order.name,
-                update_stock=1,
+                # Stock-side (ERPNext Bin vs Unicommerce's real stock) is a
+                # known, separate gap being fixed independently -- invoicing
+                # and payment status should not be blocked on it, so stock
+                # deduction is off here for now. Revert to update_stock=1
+                # once the stock pull is confirmed keeping Bin accurate.
+                update_stock=0,
                 so_data=unicommerce_order,
                 warehouse_allocations=warehouse_allocations,
             )
