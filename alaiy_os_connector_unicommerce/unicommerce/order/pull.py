@@ -47,7 +47,7 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
 
     for order in new_orders:
         sales_order = create_order(order, client=client)
-        if sales_order and settings.only_sync_completed_orders:
+        if sales_order:
             _create_sales_invoices(order, sales_order, client)
 
 
@@ -87,13 +87,24 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
 
 
 def _create_sales_invoices(unicommerce_order: dict, sales_order, client: UnicommerceClient):
-    """Create a Sales Invoice per shipping package -- used only when the
-    connector is configured to sync finished orders (only_sync_completed_orders)."""
+    """Create a Sales Invoice per shipping package that Unicommerce has
+    actually invoiced -- called on every order pull now, not gated behind
+    only_sync_completed_orders (that setting controls which orders get
+    PULLED, e.g. only COMPLETE-status orders; invoicing is a separate
+    concern and should run for any pulled order regardless, matching
+    real-world orders that ship after being pulled in a non-final state).
+
+    Only attempts packages in the same INVOICED_STATE set fulfillment/
+    invoice.py already filters on -- a freshly placed order has shipping
+    packages still in CREATED, which Unicommerce has no invoice for yet;
+    without this filter, get_sales_invoice would 400 on every such package
+    on every single pull cycle until it ships."""
     from alaiy_os_connector_unicommerce.unicommerce.client.invoicing import get_sales_invoice
-    from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import create_sales_invoice
+    from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import INVOICED_STATE, create_sales_invoice
 
     facility_code = sales_order.get(FACILITY_CODE_FIELD)
-    for package in unicommerce_order["shippingPackages"]:
+    packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in INVOICED_STATE]
+    for package in packages:
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)
         try:
             existing_si = frappe.db.get_value("Sales Invoice", {INVOICE_CODE_FIELD: invoice_data["invoice"]["code"]})
