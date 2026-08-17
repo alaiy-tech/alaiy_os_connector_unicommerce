@@ -9,7 +9,7 @@ new client onto this connector. For a plain-English overview see
 3. [Channels](03-channels.md) — the multi-marketplace model
 4. [Order flow](04-order-flow.md) — order pull, status, cancellation, returns
 5. [Fulfillment](05-fulfillment.md) — delivery note, invoice, manifest
-6. [Product & inventory](06-product-inventory.md) — product pull/push, inventory push
+6. [Product & inventory](06-product-inventory.md) — product pull/push, inventory pull
 7. [Client / API](07-client-api.md) — transport layer, every real endpoint
 8. [Auth](08-auth.md) — token lifecycle and its failure modes
 9. [Setup checklist](09-setup-checklist.md) — onboarding a new client/site

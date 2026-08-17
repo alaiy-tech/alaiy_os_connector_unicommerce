@@ -48,8 +48,10 @@ doesn't have is created automatically.
 
 ## Inventory
 
-**Stock sync** — Pushes stock levels to Unicommerce every few minutes, per
-warehouse.
+**Stock sync** — Pulls Unicommerce's real per-facility stock into Alaiy OS
+every 5 minutes, as an audited Stock Reconciliation per warehouse. Alaiy OS
+was previously the source of truth pushing stock out; that direction has
+been removed — Unicommerce is now the source of truth for physical stock.
 
 **Warehouse mapping** — Map each Unicommerce facility to an Alaiy OS warehouse,
 with a separate returns warehouse.
@@ -82,8 +84,15 @@ sent to Unicommerce.
 
 ## Purchasing
 
-**Goods received notes** — Submit a Stock Entry in Alaiy OS and it uploads as a
-GRN to Unicommerce.
+**Purchase Order import** — Pulls Purchase Orders from Unicommerce into Alaiy
+OS's own Purchase Order doctype, when enabled.
+
+**GRN import** — Pulls goods-received receipts (GRNs) against a Purchase
+Order from Unicommerce into Alaiy OS Purchase Receipts, when enabled.
+
+**Goods received notes (outbound)** — Submit a Stock Entry in Alaiy OS and it
+uploads as a GRN to Unicommerce (a separate, independent flow from GRN
+import above).
 
 ---
 

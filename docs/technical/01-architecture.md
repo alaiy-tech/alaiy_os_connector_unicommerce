@@ -10,17 +10,23 @@ button is pressed. Order/status import is always read-only pull.
 
 | Flow | Direction | Trigger | Interval |
 |---|---|---|---|
-| Order pull | Unicommerce → Alaiy OS | cron | `order_sync_frequency` (10/15/30/60 min) |
+| Order pull | Unicommerce → Alaiy OS | cron | `order_sync_frequency` (1/5/10/15/30/60 min) |
 | Order status sync | Unicommerce → Alaiy OS | `hourly_long` | hourly |
 | Cancellations & returns | Unicommerce → Alaiy OS | `hourly_long` | hourly |
 | Delivery Note creation | Unicommerce → Alaiy OS | cron | every 5 min |
 | Invoice + shipping label | Alaiy OS → Unicommerce | manual button / API | on demand |
 | Product pull | Unicommerce → Alaiy OS | manual / bulk import job | on demand |
 | Product push | Alaiy OS → Unicommerce | cron (if enabled) | rides `order_sync_frequency` |
-| Inventory push | Alaiy OS → Unicommerce | cron | every 5 min |
-| Purchase Order pull | Unicommerce → Alaiy OS | cron (if enabled) | `po_sync_frequency` |
-| GRN push | Alaiy OS → Unicommerce | cron (if enabled) | rides PO interval |
+| Inventory pull | Unicommerce → Alaiy OS | cron (if `enable_inventory_sync`) | every 5 min, fixed |
+| Purchase Order pull | Unicommerce → Alaiy OS | cron (if `sync_purchase_orders`) | `po_sync_frequency` |
+| GRN pull | Unicommerce → Alaiy OS | cron (if `sync_grn_receipts`) | rides `po_sync_frequency` |
+| GRN upload (Stock Entry) | Alaiy OS → Unicommerce | doc event (`Stock Entry.on_submit`) | on demand |
 | Manifest close | Alaiy OS → Unicommerce | manual (Submit) | on demand |
+
+`inventory/push.py` (ERPNext → Unicommerce stock push) still exists in the
+codebase but is no longer wired into `hooks.py` — it is dead code, not a live
+flow. Unicommerce is the sole source of truth for physical stock now; nothing
+pushes stock out.
 
 ## Other docs in this set
 
@@ -28,7 +34,7 @@ button is pressed. Order/status import is always read-only pull.
 - [03-channels.md](03-channels.md) — the multi-marketplace model
 - [04-order-flow.md](04-order-flow.md) — order pull, status, cancellation, returns
 - [05-fulfillment.md](05-fulfillment.md) — delivery note, invoice, manifest
-- [06-product-inventory.md](06-product-inventory.md) — product pull/push, inventory push
+- [06-product-inventory.md](06-product-inventory.md) — product pull/push, inventory pull
 - [07-client-api.md](07-client-api.md) — transport layer, every real endpoint
 - [08-auth.md](08-auth.md) — token lifecycle and its failure modes
 - [09-setup-checklist.md](09-setup-checklist.md) — onboarding a new client/site

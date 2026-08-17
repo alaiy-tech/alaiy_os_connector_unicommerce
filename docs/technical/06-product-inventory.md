@@ -36,14 +36,33 @@ Enforces the SKU pattern `[A-Za-z0-9._\-/]{3,45}` and requires an Item
 Group's `unicommerce_product_category` to be set — only when
 `sync_to_unicommerce` is checked and the connector is enabled.
 
-## Inventory push — `inventory/push.py` (one-way only)
+## Inventory pull — `inventory/pull.py` (the live direction)
 
-Every 5 minutes, gated by `enable_inventory_sync`. Per configured warehouse
-(group warehouses consolidate every leaf stock bin), selects Items whose
-stock changed since their last sync timestamp, batches up to 1000 SKUs per
-request, calls the bulk adjust-inventory endpoint with
-`adjustmentType: REPLACE`. The per-Item watermark only advances for SKUs
-that succeeded across every warehouse they appear in.
+Unicommerce → Alaiy OS. Runs every 5 minutes via cron, gated by
+`enable_inventory_sync`, additionally interval-gated by
+`inventory_sync_frequency` against `last_inventory_pull`.
 
-There is deliberately no inventory pull direction — the Alaiy OS side is the
-system of record for stock, never Unicommerce.
+For each mapped, non-group warehouse: fetches the Unicommerce inventory
+snapshot (`inventory/inventorySnapshot/get`, chunked at 10,000 SKUs per
+call — Unicommerce's own documented limit) for every Item with a real
+Unicommerce SKU (`unicommerce_external_id` set — not gated by the "Sync to
+Unicommerce" checkbox, which is an opt-in for pushing out, not a signal for
+whether stock should be pulled in). Any SKU whose reported quantity differs
+from the current `Bin.actual_qty` becomes one row in a **Stock
+Reconciliation**, batched at up to 100 items per document (ERPNext
+auto-backgrounds a submit past that threshold, which would hide a real
+failure) — one real, audited Stock Reconciliation per warehouse per run, not
+a raw Bin write. A facility mapped to a **group warehouse is skipped and
+logged**, not aggregated/distributed — guessing how stock splits across
+child warehouses would be inventing data.
+
+Reserved/open-sale quantity is deliberately not subtracted — same
+`actual_qty` convention the old push job used.
+
+## Inventory push — `inventory/push.py` (dead code, not scheduled)
+
+Alaiy OS → Unicommerce. The code still exists (per-warehouse bulk
+`inventory/adjust/bulk` call with `adjustmentType: REPLACE`, up to 1000 SKUs
+per request, gated by `enable_inventory_sync`) but its scheduler hook was
+removed from `hooks.py` — nothing calls it anymore. Unicommerce is now the
+sole system of record for physical stock; there is no live push direction.

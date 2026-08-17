@@ -12,18 +12,21 @@ This connector moves things between them.
 
 | | Direction | Automatic? |
 |---|---|---|
-| Orders | Unicommerce → Alaiy OS | yes, every 30 min |
+| Orders | Unicommerce → Alaiy OS | yes, every 30 min (configurable) |
 | Order status changes | Unicommerce → Alaiy OS | yes, hourly |
 | Cancellations & returns | Unicommerce → Alaiy OS | yes, hourly |
 | Products | Unicommerce → Alaiy OS | on demand |
 | Products | Alaiy OS → Unicommerce | only if you switch it on |
-| Stock levels | Alaiy OS → Unicommerce | only if you switch it on |
+| Stock levels | Unicommerce → Alaiy OS | yes, every 5 min, only if you switch it on |
+| Purchase Orders | Unicommerce → Alaiy OS | only if you switch it on |
+| Goods received (GRN) | Unicommerce → Alaiy OS | only if you switch it on, rides Purchase Order sync |
 | Invoices & shipping labels | Alaiy OS → Unicommerce | manual button |
-| Goods received | Alaiy OS → Unicommerce | when you submit a Stock Entry |
+| Goods received (Stock Entry upload) | Alaiy OS → Unicommerce | when you submit a Stock Entry |
 | Delivery notes | Unicommerce → Alaiy OS | yes, every 5 min |
 
 **Nothing writes to Unicommerce unless you turn it on or press a button.** Order
-and status import are read-only.
+and status import are read-only. Stock levels used to be pushed out to
+Unicommerce; that direction has been removed — stock now only flows in.
 
 ---
 
@@ -66,6 +69,22 @@ Two ways:
    dimensions, weight, colour, size, brand, HSN code, category and image. Can be
    limited to a category, or to items changed recently.
 
+### Stock levels (off by default)
+With "Enable Inventory Sync" on, every 5 minutes it reads Unicommerce's real
+stock for each mapped warehouse and books an audited Stock Reconciliation in
+Alaiy OS. Unicommerce is the system of record for physical stock; nothing is
+pushed the other way. A warehouse mapped to a group warehouse is skipped —
+splitting stock across its children would be guessing, not pulling.
+
+### Purchase Orders (off by default)
+With "Sync Purchase Orders" on, Purchase Orders raised in Unicommerce are
+pulled into Alaiy OS's own Purchase Order doctype on a schedule.
+
+### Goods received against a Purchase Order (off by default)
+With "Sync GRN Receipts" on (rides the same schedule as Purchase Orders),
+each Unicommerce goods-received receipt becomes a Purchase Receipt in Alaiy
+OS, linked to the matching Purchase Order.
+
 ---
 
 ## Going OUT to Alaiy OS → Unicommerce
@@ -76,18 +95,16 @@ Everything here is **off by default**.
 With "Upload new items to Unicommerce" switched on, items you flag are pushed to
 Unicommerce on a schedule.
 
-### Stock levels (off by default)
-With "Enable Inventory Sync" on, it pushes your stock figures to Unicommerce
-every few minutes, per warehouse.
-
 ### Invoices and shipping labels (manual only)
 Buttons on the Sales Order and Pick List. Pressing one asks Unicommerce to raise
 the invoice, allocate a courier and generate the shipping label — then pulls the
 invoice and label back into Alaiy OS. Can also record the customer payment.
 
-### Goods received (off by default)
+### Goods received via Stock Entry (off by default)
 With Auto GRN on, submitting a Stock Entry uploads a goods-received file to
-Unicommerce.
+Unicommerce. This is a separate, independent flow from the Purchase
+Order/GRN pull described above — one uploads a warehouse-side receipt as a
+CSV import job, the other pulls Unicommerce's own inflow receipts in.
 
 ### Parcel dimensions
 If you change the package type on an order that's already confirmed, the new
@@ -121,9 +138,8 @@ Four things, and orders import nothing without them:
 
 - **Send orders to Unicommerce.** Orders only travel one way, inwards.
 - **List your sales channels.** Unicommerce has no such facility. Manual entry.
-- **Two-way stock.** Stock goes out only, never comes in.
-- **Show progress properly.** The connector card's counters always read zero;
-  the sync log records success or failure but not how much it moved.
+- **Push stock to Unicommerce.** That direction existed once and was removed —
+  stock now only ever flows in, from Unicommerce.
 - **Let you stop a running sync.** No cancel button once it starts.
 
 ---
