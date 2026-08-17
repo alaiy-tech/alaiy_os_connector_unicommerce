@@ -38,6 +38,14 @@ from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
 MAX_SKUS_PER_REQUEST = 10000  # Unicommerce's own documented limit per call
 
+# ERPNext core auto-enqueues Stock Reconciliation submit as a background job
+# once an item count exceeds this (stock_reconciliation.py's own threshold) --
+# submit() then returns immediately without raising, leaving the doc queued/
+# locked in draft until a worker picks it up. Keeping each Reconciliation at
+# or under 100 items keeps every submit synchronous, so a real failure
+# surfaces immediately instead of disappearing into a background job.
+MAX_ITEMS_PER_RECONCILIATION = 100
+
 
 def pull_inventory_from_unicommerce(client=None, force: bool = False):
     """Pull Unicommerce's current stock per configured warehouse into a
@@ -100,14 +108,17 @@ def _pull_warehouse(client, warehouse, facility_code):
     if not changes:
         return
 
-    doc = frappe.new_doc("Stock Reconciliation")
-    doc.company = frappe.db.get_single_value(SETTINGS_DOCTYPE, "unicommerce_company")
-    doc.purpose = "Stock Reconciliation"
-    for change in changes:
-        doc.append("items", change)
-    doc.flags.ignore_permissions = True
-    doc.insert(ignore_permissions=True)
-    doc.submit()
+    company = frappe.db.get_single_value(SETTINGS_DOCTYPE, "unicommerce_company")
+    for i in range(0, len(changes), MAX_ITEMS_PER_RECONCILIATION):
+        batch = changes[i:i + MAX_ITEMS_PER_RECONCILIATION]
+        doc = frappe.new_doc("Stock Reconciliation")
+        doc.company = company
+        doc.purpose = "Stock Reconciliation"
+        for change in batch:
+            doc.append("items", change)
+        doc.flags.ignore_permissions = True
+        doc.insert(ignore_permissions=True)
+        doc.submit()
 
 
 def _get_synced_items() -> dict:
