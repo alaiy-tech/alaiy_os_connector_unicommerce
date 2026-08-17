@@ -49,6 +49,7 @@
   "last_order_sync",
   "column_break_20",
   "last_inventory_sync",
+  "last_inventory_pull",
   "last_po_sync",
   "last_grn_sync"
  ],
@@ -315,6 +316,12 @@
    "fieldname": "last_inventory_sync",
    "fieldtype": "Datetime",
    "label": "Last Inventory Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_inventory_pull",
+   "fieldtype": "Datetime",
+   "label": "Last Inventory Pull",
    "read_only": 1
   },
   {

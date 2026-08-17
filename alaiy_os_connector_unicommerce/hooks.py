@@ -53,6 +53,7 @@ scheduler_events = {
         ],
         "*/5 * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
+            "alaiy_os_connector_unicommerce.unicommerce.inventory.pull.pull_inventory_from_unicommerce",
         ],
     },
     "hourly_long": [
