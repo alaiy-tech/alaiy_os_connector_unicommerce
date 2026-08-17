@@ -192,7 +192,10 @@ def _fetch_and_sync_invoice(
         create_sales_invoice(
             invoice_data,
             erpnext_so_code,
-            update_stock=1,
+            # See the matching note in order/pull.py -- stock accuracy is a
+            # known, separate gap being fixed independently; invoicing and
+            # payment status should not be blocked on it.
+            update_stock=0,
             shipping_label=label_pdf,
             warehouse_allocations=warehouse_allocation,
             invoice_response=invoice_response,
