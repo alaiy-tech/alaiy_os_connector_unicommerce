@@ -21,6 +21,14 @@ is silently skipped.
 | `shipping_handled_by_marketplace` | Decides which invoicing endpoint is used — marketplace-shipped vs self-shipped |
 | `auto_payment_entry`, `submit_payment_entry` | Auto-create (and optionally submit) a Payment Entry on invoice creation — for COD/marketplace-settled channels |
 
+`_autofill_accounts()` (validate hook, runs before `_check_company()`) fills
+any still-blank account field from the placeholder accounts
+`setup/create_channel_accounts.py` bootstraps (`Output Tax IGST - <abbr>`,
+`TCS Payable - <abbr>`, `Gift Wrap Charges Collected - <abbr>`, etc.) plus the
+company's own default cost center / cash account — never overwrites a field
+that already has a real value. This is why a newly created Channel often
+already has most of its accounts filled in without anyone touching them.
+
 `_check_company()` (validate hook) rejects the record if any linked
 account/warehouse/cost-center doesn't belong to the Channel's own `company`.
 
