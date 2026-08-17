@@ -106,6 +106,18 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
     packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in INVOICED_STATE]
     for package in packages:
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)
+        if not invoice_data or not invoice_data.get("invoice"):
+            # get_sales_invoice returns None on any API failure (e.g. the
+            # account's Unicommerce API credentials lacking the invoice
+            # detail resource scope) without logging anything itself --
+            # skip cleanly here instead of crashing on invoice_data["invoice"]
+            # with an opaque TypeError, same package retried next pull.
+            frappe.log_error(
+                title=f"Unicommerce: no invoice data for package {package['code']} (order {sales_order.name})",
+                message="get_sales_invoice returned no data -- check API credentials/permissions "
+                "for the invoice details resource on this Unicommerce account.",
+            )
+            continue
         try:
             existing_si = frappe.db.get_value("Sales Invoice", {INVOICE_CODE_FIELD: invoice_data["invoice"]["code"]})
             if existing_si:
