@@ -52,7 +52,6 @@ scheduler_events = {
             "alaiy_os_connector_unicommerce.unicommerce.sync_jobs.check_and_enqueue"
         ],
         "*/5 * * * *": [
-            "alaiy_os_connector_unicommerce.unicommerce.inventory.push.update_inventory_on_unicommerce",
             "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
         ],
     },

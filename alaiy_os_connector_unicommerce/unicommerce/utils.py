@@ -9,7 +9,6 @@ import frappe
 SYNC_METHODS = {
     "Items": "alaiy_os_connector_unicommerce.unicommerce.product.push.upload_new_items",
     "Orders": "alaiy_os_connector_unicommerce.unicommerce.order.pull.sync_new_orders",
-    "Inventory": "alaiy_os_connector_unicommerce.unicommerce.inventory.push.update_inventory_on_unicommerce",
 }
 
 DOCUMENT_URL_FORMAT = {
