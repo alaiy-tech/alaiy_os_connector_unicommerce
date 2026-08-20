@@ -144,6 +144,14 @@ def _ensure_list_view_column(doctype, fieldname, label):
 # PENDING_VERIFICATION, seen live in order-onhold.md and in real order data.
 ORDER_STATUS_OPTIONS = "\nCREATED\nPENDING_VERIFICATION\nPROCESSING\nCOMPLETE\nCANCELLED"
 
+# Full shipment status lifecycle (forward + reverse delivery) per Unicommerce
+# docs (oms-overview.md, "Shipment Status").
+ORDER_SHIPMENT_STATUS_OPTIONS = (
+    "\nCREATED\nLOCATION_NOT_SERVICEABLE\nPICKING\nPICKED\nPACKED\nREADY_TO_SHIP\nCANCELLED"
+    "\nMANIFESTED\nDISPATCHED\nSHIPPED\nDELIVERED\nPENDING_CUSTOMIZATION\nCUSTOMIZATION_COMPLETE"
+    "\nSPLITTED\nMERGED\nRETURN_EXPECTED\nRETURNED\nRETURN_ACKNOWLEDGED"
+)
+
 
 # ---------------------------------------------------------------------------
 # First-enable setup (called from the settings controller, not on migrate)
@@ -165,7 +173,7 @@ def setup_custom_fields():
         ITEM_SHIPPING_CHARGE_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
         ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
-        ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
+        ORDER_ITEM_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
         PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
         PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
         PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, SHIPPING_METHOD_FIELD,
@@ -300,6 +308,11 @@ def setup_custom_fields():
                  in_list_view=1, in_standard_filter=1),
             dict(fieldname=ORDER_INVOICE_STATUS_FIELD, label="Unicommerce Invoice generation Status",
                  fieldtype="Small Text", insert_after=ORDER_STATUS_FIELD, read_only=1),
+            dict(fieldname=ORDER_SHIPMENT_STATUS_FIELD, label="Unicommerce Shipment Status", fieldtype="Select",
+                 options=ORDER_SHIPMENT_STATUS_OPTIONS, insert_after=ORDER_INVOICE_STATUS_FIELD, read_only=1,
+                 in_list_view=1, in_standard_filter=1,
+                 description="Populated directly from Unicommerce shipping package status, independent of "
+                             "whether this order has a local Sales Invoice yet."),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
                  options="Unicommerce Package Type", insert_after=ORDER_INVOICE_STATUS_FIELD, allow_on_submit=1),
             dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",

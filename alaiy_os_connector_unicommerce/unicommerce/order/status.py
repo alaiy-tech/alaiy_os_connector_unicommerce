@@ -9,8 +9,8 @@ from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.manifest import search_shipping_packages
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import search_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    ORDER_CODE_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE, SHIPPING_PACKAGE_CODE_FIELD,
-    SHIPPING_PACKAGE_STATUS_FIELD,
+    ORDER_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
+    SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD,
 )
 from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import (
     check_and_update_customer_initiated_returns, create_rto_return, fully_cancel_orders,
@@ -124,10 +124,35 @@ def update_shipping_package_status():
             continue
 
         _update_package_status_fields(valid_packages)
+        _track_order_shipment_status(valid_packages)
 
         returning_packages = [p for p in valid_packages if p["status"] in SHIPMENT_RETURN_STATES]
         for package in returning_packages:
             create_rto_return(package, client=client)
+
+
+def _track_order_shipment_status(packages):
+    """Write shipment status straight onto Sales Order, independent of
+    whether the order has a local Sales Invoice yet -- unlike
+    _update_package_status_fields (which only ever reaches invoiced orders
+    via Sales Invoice), this is the only place a never-invoiced order's real
+    shipment/return progress becomes visible in ERPNext at all."""
+    packages_with_order = [p for p in packages if p.get("saleOrderCode")]
+    if not packages_with_order:
+        return
+
+    order_shipment_status_map = {}
+    for package in packages_with_order:
+        order_shipment_status_map[package["saleOrderCode"]] = package["status"]
+
+    current = frappe.db.get_values(
+        "Sales Order", {ORDER_CODE_FIELD: ("in", list(order_shipment_status_map.keys()))},
+        fieldname=["name", ORDER_SHIPMENT_STATUS_FIELD, ORDER_CODE_FIELD], as_dict=True,
+    )
+    for order in current:
+        new_status = order_shipment_status_map.get(order.get(ORDER_CODE_FIELD))
+        if order.get(ORDER_SHIPMENT_STATUS_FIELD) != new_status:
+            frappe.db.set_value("Sales Order", order["name"], ORDER_SHIPMENT_STATUS_FIELD, new_status)
 
 
 def _update_package_status_fields(packages):
