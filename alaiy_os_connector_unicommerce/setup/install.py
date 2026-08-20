@@ -12,6 +12,8 @@ app and running `bench migrate` is enough on its own, no separate "enable
 the connector first" step required before the doctype schema is real.
 """
 
+import json
+
 import frappe
 
 
@@ -112,6 +114,28 @@ def _fix_settings_as_single():
         "UPDATE `tabDocType` SET issingle=1 "
         "WHERE name='Unicommerce Connector Settings' AND issingle=0"
     )
+    frappe.db.commit()
+
+
+def _ensure_list_view_column(doctype, fieldname, label):
+    """
+    A doctype's `List View Settings` row, once it exists (created the first
+    time anyone customizes columns), takes over from the "show every
+    in_list_view field automatically" default -- a newly added in_list_view
+    field then never appears until someone re-adds it by hand. Sales Order
+    is commonly already customized on a real site, so append our field to
+    it instead of relying on the automatic behavior. Same pattern as the
+    Shopify connector's own _ensure_list_view_column.
+    """
+    if not frappe.db.exists("List View Settings", doctype):
+        return  # no customization yet -- in_list_view alone is enough
+    settings = frappe.get_doc("List View Settings", doctype)
+    fields = json.loads(settings.fields or "[]")
+    if any(f.get("fieldname") == fieldname for f in fields):
+        return
+    fields.append({"fieldname": fieldname, "label": label})
+    settings.fields = json.dumps(fields)
+    settings.save(ignore_permissions=True)
     frappe.db.commit()
 
 
@@ -386,6 +410,8 @@ def setup_custom_fields():
 
     create_custom_fields(custom_sections, update=False)
     create_custom_fields(custom_fields, update=False)
+
+    _ensure_list_view_column("Sales Order", ORDER_STATUS_FIELD, "Unicommerce Order Status")
 
     frappe.db.commit()
 
