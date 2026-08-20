@@ -33,6 +33,7 @@
   "order_status_days",
   "delivery_note_settings_section",
   "delivery_note",
+  "auto_generate_invoice",
   "inventory_sync_settings_section",
   "enable_inventory_sync",
   "inventory_sync_frequency",
@@ -220,6 +221,13 @@
    "fieldname": "delivery_note",
    "fieldtype": "Check",
    "label": "Import Delivery Notes from Unicommerce on Shipment"
+  },
+  {
+   "default": "0",
+   "description": "Automatically generate the Unicommerce invoice (and resulting Sales Invoice) for any order whose status turns COMPLETE, instead of requiring the manual invoice-generation button. Uses default warehouse allocation.",
+   "fieldname": "auto_generate_invoice",
+   "fieldtype": "Check",
+   "label": "Auto-generate Invoice on Order Complete"
   },
   {
    "fieldname": "inventory_sync_settings_section",

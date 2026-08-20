@@ -52,6 +52,33 @@ def update_sales_order_status():
     if probable_returns:
         check_and_update_customer_initiated_returns(probable_returns, client=client)
 
+    if settings.get("auto_generate_invoice"):
+        newly_completed = [d["code"] for d in valid_orders if d["status"] in RETURN_POSSIBLE_STATE]
+        if newly_completed:
+            _generate_invoices_for_newly_completed_orders(newly_completed)
+
+
+def _generate_invoices_for_newly_completed_orders(order_codes):
+    """Orders that just turned COMPLETE and have no Sales Invoice yet -- skip
+    ones already invoiced (manually or by an earlier run) so this is safe to
+    call every hourly_long tick without duplicating invoices."""
+    from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import bulk_generate_invoices
+
+    orders = frappe.db.get_values(
+        "Sales Order", {ORDER_CODE_FIELD: ("in", order_codes)},
+        fieldname=["name", ORDER_CODE_FIELD], as_dict=True,
+    )
+    if not orders:
+        return
+
+    invoiced_uni_codes = frappe.db.get_all(
+        "Sales Invoice", filters={ORDER_CODE_FIELD: ("in", [d[ORDER_CODE_FIELD] for d in orders])},
+        pluck=ORDER_CODE_FIELD,
+    )
+    pending = [d["name"] for d in orders if d[ORDER_CODE_FIELD] not in invoiced_uni_codes]
+    if pending:
+        bulk_generate_invoices(pending)
+
 
 def _update_order_status_fields(orders):
     order_status_map = {d["code"]: d["status"] for d in orders}
