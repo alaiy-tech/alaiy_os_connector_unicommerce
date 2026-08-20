@@ -411,6 +411,15 @@ def setup_custom_fields():
     create_custom_fields(custom_sections, update=False)
     create_custom_fields(custom_fields, update=False)
 
+    # create_custom_fields(update=False) silently skips a field that already
+    # exists, so in_list_view/in_standard_filter added here never reach a
+    # site where the field was created before this flag existed. Force them
+    # on unconditionally -- cheap, idempotent, safe on every migrate.
+    frappe.db.set_value(
+        "Custom Field", "Sales Order-" + ORDER_STATUS_FIELD,
+        {"in_list_view": 1, "in_standard_filter": 1},
+    )
+
     _ensure_list_view_column("Sales Order", ORDER_STATUS_FIELD, "Unicommerce Order Status")
 
     frappe.db.commit()
