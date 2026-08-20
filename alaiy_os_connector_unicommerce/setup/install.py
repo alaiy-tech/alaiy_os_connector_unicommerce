@@ -266,7 +266,7 @@ def setup_custom_fields():
             dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
                  insert_after=CHANNEL_ID_FIELD, read_only=1),
             dict(fieldname=ORDER_STATUS_FIELD, label="Unicommerce Order Status", fieldtype="Small Text",
-                 insert_after=FACILITY_CODE_FIELD, read_only=1),
+                 insert_after=FACILITY_CODE_FIELD, read_only=1, in_list_view=1, in_standard_filter=1),
             dict(fieldname=ORDER_INVOICE_STATUS_FIELD, label="Unicommerce Invoice generation Status",
                  fieldtype="Small Text", insert_after=ORDER_STATUS_FIELD, read_only=1),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
@@ -394,10 +394,14 @@ def _ensure_custom_fields(doctype, fields):
     for f in fields:
         key = f"{doctype}-{f['fieldname']}"
         if frappe.db.exists("Custom Field", key):
-            # Keep the description in sync even for an existing field —
-            # it's just documentation, safe to overwrite.
+            # Keep the description and list/filter visibility in sync even for
+            # an existing field -- these are safe to overwrite, unlike fieldtype.
             if f.get("description"):
                 frappe.db.set_value("Custom Field", key, "description", f["description"])
+            if f.get("in_list_view"):
+                frappe.db.set_value("Custom Field", key, "in_list_view", 1)
+            if f.get("in_standard_filter"):
+                frappe.db.set_value("Custom Field", key, "in_standard_filter", 1)
             continue
         cf = frappe.new_doc("Custom Field")
         cf.dt = doctype
@@ -408,6 +412,7 @@ def _ensure_custom_fields(doctype, fields):
         cf.search_index = 1 if f.get("search_index") else 0
         cf.read_only = 1 if f.get("read_only") else 0
         cf.in_list_view = 1 if f.get("in_list_view") else 0
+        cf.in_standard_filter = 1 if f.get("in_standard_filter") else 0
         cf.default = f.get("default")
         cf.description = f.get("description", "")
         cf.module = "Alaiy Os Connector Unicommerce"
