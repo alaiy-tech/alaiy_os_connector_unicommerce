@@ -140,6 +140,12 @@ def _ensure_list_view_column(doctype, fieldname, label):
 
 
 # ---------------------------------------------------------------------------
+# Sale order-level statuses per Unicommerce docs (oms-overview.md) plus
+# PENDING_VERIFICATION, seen live in order-onhold.md and in real order data.
+ORDER_STATUS_OPTIONS = "\nCREATED\nPENDING_VERIFICATION\nPROCESSING\nCOMPLETE\nCANCELLED"
+
+
+# ---------------------------------------------------------------------------
 # First-enable setup (called from the settings controller, not on migrate)
 # ---------------------------------------------------------------------------
 def setup_custom_fields():
@@ -289,8 +295,9 @@ def setup_custom_fields():
                  insert_after=ORDER_DISPLAY_CODE_FIELD, read_only=1, options="Unicommerce Channel", search_index=1),
             dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
                  insert_after=CHANNEL_ID_FIELD, read_only=1),
-            dict(fieldname=ORDER_STATUS_FIELD, label="Unicommerce Order Status", fieldtype="Small Text",
-                 insert_after=FACILITY_CODE_FIELD, read_only=1, in_list_view=1, in_standard_filter=1),
+            dict(fieldname=ORDER_STATUS_FIELD, label="Unicommerce Order Status", fieldtype="Select",
+                 options=ORDER_STATUS_OPTIONS, insert_after=FACILITY_CODE_FIELD, read_only=1,
+                 in_list_view=1, in_standard_filter=1),
             dict(fieldname=ORDER_INVOICE_STATUS_FIELD, label="Unicommerce Invoice generation Status",
                  fieldtype="Small Text", insert_after=ORDER_STATUS_FIELD, read_only=1),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
@@ -412,13 +419,16 @@ def setup_custom_fields():
     create_custom_fields(custom_fields, update=False)
 
     # create_custom_fields(update=False) silently skips a field that already
-    # exists, so in_list_view/in_standard_filter added here never reach a
-    # site where the field was created before this flag existed. Force them
-    # on unconditionally -- cheap, idempotent, safe on every migrate.
-    frappe.db.set_value(
-        "Custom Field", "Sales Order-" + ORDER_STATUS_FIELD,
-        {"in_list_view": 1, "in_standard_filter": 1},
-    )
+    # exists, so in_list_view/in_standard_filter/fieldtype added here never
+    # reach a site where the field predates them. Go through .save() rather
+    # than db.set_value so the fieldtype change (Small Text -> Select) also
+    # alters the actual DB column, not just the Custom Field record.
+    status_field = frappe.get_doc("Custom Field", "Sales Order-" + ORDER_STATUS_FIELD)
+    status_field.fieldtype = "Select"
+    status_field.options = ORDER_STATUS_OPTIONS
+    status_field.in_list_view = 1
+    status_field.in_standard_filter = 1
+    status_field.save(ignore_permissions=True)
 
     _ensure_list_view_column("Sales Order", ORDER_STATUS_FIELD, "Unicommerce Order Status")
 
