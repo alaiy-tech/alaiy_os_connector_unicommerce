@@ -99,8 +99,20 @@ def create_rto_return(package_info, client):
         "Sales Invoice", {SHIPPING_PACKAGE_CODE_FIELD: package_code},
         ["name", ORDER_CODE_FIELD, CHANNEL_ID_FIELD], as_dict=True,
     )
+    if not invoice:
+        # Package is on its way back but was never invoiced locally (order's
+        # invoice generation was skipped/delayed) -- nothing to attach a
+        # credit note to. Log rather than silently drop: this return is
+        # otherwise invisible until someone backfills the missing invoice.
+        frappe.log_error(
+            title="Unicommerce: RTO package has no local Sales Invoice",
+            message=f"Shipping package {package_code} is returning to origin but no Sales Invoice "
+                    f"carries this shipping package code -- its order was likely never invoiced.",
+        )
+        return
+
     already_returned = frappe.db.get_value("Sales Invoice", {SHIPPING_PACKAGE_CODE_FIELD: package_code, "is_return": 1})
-    if not invoice or already_returned:
+    if already_returned:
         return
 
     so_data = get_sales_order(client, invoice.get(ORDER_CODE_FIELD))
@@ -153,6 +165,16 @@ def create_cir_credit_note(so_data, return_data):
     so_item_code_map = {item.get(ORDER_ITEM_CODE_FIELD): item.name for item in so.items}
 
     invoice_name = frappe.db.get_value("Sales Invoice", {ORDER_CODE_FIELD: so_data["code"], "is_return": 0})
+    if not invoice_name:
+        # Same shape as create_rto_return's missing-invoice check -- a
+        # customer return on an order that was never invoiced locally has
+        # nothing to attach a credit note to.
+        frappe.log_error(
+            title="Unicommerce: customer return has no local Sales Invoice",
+            message=f"Order {so_data['code']} has a Customer Returned return but no non-return "
+                    f"Sales Invoice exists locally -- it was likely never invoiced.",
+        )
+        return
     si = frappe.get_doc("Sales Invoice", invoice_name)
     so_si_item_map = {item.so_detail: item.name for item in si.items}
 
