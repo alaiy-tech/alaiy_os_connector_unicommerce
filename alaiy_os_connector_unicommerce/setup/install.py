@@ -420,15 +420,28 @@ def setup_custom_fields():
 
     # create_custom_fields(update=False) silently skips a field that already
     # exists, so in_list_view/in_standard_filter/fieldtype added here never
-    # reach a site where the field predates them. Go through .save() rather
-    # than db.set_value so the fieldtype change (Small Text -> Select) also
-    # alters the actual DB column, not just the Custom Field record.
-    status_field = frappe.get_doc("Custom Field", "Sales Order-" + ORDER_STATUS_FIELD)
-    status_field.fieldtype = "Select"
-    status_field.options = ORDER_STATUS_OPTIONS
-    status_field.in_list_view = 1
-    status_field.in_standard_filter = 1
-    status_field.save(ignore_permissions=True)
+    # reach a site where the field predates them. Custom Field also refuses
+    # an in-place fieldtype change (confirmed: raises "Fieldtype cannot be
+    # changed from Small Text to Select" on save) -- delete and recreate
+    # instead, which goes through the normal create path that alters the
+    # DB column. Safe: same fieldname, values are short status strings that
+    # fit a Select's varchar column with no truncation.
+    status_field_name = "Sales Order-" + ORDER_STATUS_FIELD
+    existing = frappe.db.get_value("Custom Field", status_field_name, "fieldtype")
+    if existing and existing != "Select":
+        frappe.delete_doc("Custom Field", status_field_name, ignore_permissions=True, force=True)
+        frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Sales Order",
+            "fieldname": ORDER_STATUS_FIELD,
+            "label": "Unicommerce Order Status",
+            "fieldtype": "Select",
+            "options": ORDER_STATUS_OPTIONS,
+            "insert_after": FACILITY_CODE_FIELD,
+            "read_only": 1,
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+        }).insert(ignore_permissions=True)
 
     _ensure_list_view_column("Sales Order", ORDER_STATUS_FIELD, "Unicommerce Order Status")
 
