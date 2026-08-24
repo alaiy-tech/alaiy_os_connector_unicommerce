@@ -37,6 +37,12 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_I
 from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
 MAX_SKUS_PER_REQUEST = 10000  # Unicommerce's own documented limit per call
+# Confirmed live: a single request for the real catalogue (5,942 SKUs, well
+# under the documented 10000) came back as a bare None -- a client-side
+# failure (timeout/connection), not a Unicommerce-side rejection, since
+# small batches (5, and 100-item Stock Reconciliation batches) work fine in
+# the same run. Kept well under the documented cap for reliability.
+PRACTICAL_SKUS_PER_REQUEST = 500
 
 # ERPNext core auto-enqueues Stock Reconciliation submit as a background job
 # once an item count exceeds this (stock_reconciliation.py's own threshold) --
@@ -89,8 +95,8 @@ def _pull_warehouse(client, warehouse, facility_code):
 
     sku_codes = list(sku_to_item.keys())
     changes = []
-    for i in range(0, len(sku_codes), MAX_SKUS_PER_REQUEST):
-        batch = sku_codes[i:i + MAX_SKUS_PER_REQUEST]
+    for i in range(0, len(sku_codes), PRACTICAL_SKUS_PER_REQUEST):
+        batch = sku_codes[i:i + PRACTICAL_SKUS_PER_REQUEST]
         response = get_inventory_snapshot(client, sku_codes=batch, facility_code=facility_code)
         if not response or not response.get("successful"):
             # Confirmed live: this was silently swallowing a real failure --
