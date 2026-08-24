@@ -81,6 +81,13 @@ def backfill_returns(days=90):
     )
     from alaiy_os_connector_unicommerce.unicommerce.order.pull import _create_sales_invoices
     from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import create_rto_return
+
+    # bench execute runs outside a web request, so nothing sets frappe.local.lang
+    # the way request middleware normally does -- money_in_words/get_number_format
+    # then call get_locale_value("number_format", None), which looks up a
+    # Language doc named None and crashes with AttributeError on every single
+    # currency-touching insert (Credit Note, etc.) in this loop.
+    frappe.local.lang = frappe.local.lang or frappe.db.get_single_value("System Settings", "language") or "en"
     from alaiy_os_connector_unicommerce.unicommerce.order.status import SHIPMENT_RETURN_STATES
 
     client = UnicommerceClient()
