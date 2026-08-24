@@ -88,6 +88,18 @@ def backfill_returns(days=90):
     returned_packages = [p for p in all_packages if p.get("status") in SHIPMENT_RETURN_STATES]
     print(f"{len(all_packages)} packages scanned, {len(returned_packages)} in a return state", flush=True)
 
+    def safe_log(title, message):
+        # frappe.log_error can itself fail (confirmed live: a broken
+        # `webhooks` global on this site threw AttributeError from inside
+        # log_error's own after_insert hook, escaping the caller's except
+        # block entirely and killing this whole loop at GLOB00367). A
+        # logging call must never be able to take down the batch it's
+        # trying to report on -- fall back to plain print if it does.
+        try:
+            frappe.log_error(title=title, message=message)
+        except Exception:
+            print(f"[log_error itself failed] {title}\n{message[-500:]}", flush=True)
+
     for package in returned_packages:
         code = package["code"]
         so_code = package.get("saleOrderCode")
@@ -100,10 +112,8 @@ def backfill_returns(days=90):
         try:
             _create_sales_invoices(so_data, frappe.get_doc("Sales Order", sales_order), client)
         except Exception:
-            frappe.log_error(
-                title=f"Unicommerce: backfill_returns invoice mirror failed for {code}",
-                message=frappe.get_traceback(),
-            )
+            frappe.db.rollback()
+            safe_log(f"Unicommerce: backfill_returns invoice mirror failed for {code}", frappe.get_traceback())
 
         invoice = frappe.db.get_value("Sales Invoice", {SHIPPING_PACKAGE_CODE_FIELD: package["code"]}, "name")
         print(f"{code}: invoice now = {invoice}", flush=True)
@@ -111,10 +121,8 @@ def backfill_returns(days=90):
         try:
             create_rto_return(package, client=client)
         except Exception:
-            frappe.log_error(
-                title=f"Unicommerce: backfill_returns create_rto_return failed for {code}",
-                message=frappe.get_traceback(),
-            )
+            frappe.db.rollback()
+            safe_log(f"Unicommerce: backfill_returns create_rto_return failed for {code}", frappe.get_traceback())
 
     frappe.db.commit()
     print("Credit Notes now:", frappe.db.count("Sales Invoice", {"is_return": 1}), flush=True)
