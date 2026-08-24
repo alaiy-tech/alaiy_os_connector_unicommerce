@@ -134,9 +134,21 @@ def create_credit_note(invoice_name):
         item.warehouse = return_warehouse or item.warehouse
 
     for tax in credit_note.taxes:
+        # Confirmed live: this field does not exist as an attribute on
+        # Sales Taxes and Charges on this site's ERPNext version at all
+        # (AttributeError, not an empty/None value) -- 290 real credit
+        # notes failed on this single line before it was guarded. The
+        # negation here was only correcting a stale item-wise breakdown
+        # left over from the original invoice; skipping it degrades to
+        # make_sales_return's own tax totals, which are already correct,
+        # rather than blocking every credit note over a detail field
+        # this version doesn't carry.
+        if not hasattr(tax, "item_wise_tax_detail") or not tax.item_wise_tax_detail:
+            continue
         item_wise_tax_detail = json.loads(tax.item_wise_tax_detail)
         for tax_distribution in item_wise_tax_detail.values():
             tax_distribution[1] *= -1
+        tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
         tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
 
     return credit_note
