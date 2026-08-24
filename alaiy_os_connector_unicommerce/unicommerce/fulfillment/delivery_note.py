@@ -85,6 +85,17 @@ def create_delivery_note(so, sales_invoice):
     res.set(ORDER_DISPLAY_CODE_FIELD, so.get(ORDER_DISPLAY_CODE_FIELD) or sales_invoice.get(ORDER_DISPLAY_CODE_FIELD))
     res.set(UNICOMMERCE_SHIPPING_ID, sales_invoice.get(SHIPPING_PACKAGE_CODE_FIELD))
     res.flags.ignore_permissions = True
+    # Unicommerce already reported this package DISPATCHED -- the item
+    # physically left the warehouse in reality, in the past. That makes
+    # NegativeStockError the wrong guard here: it exists to stop a FUTURE
+    # oversell, but this is recording a shipment that has already
+    # unavoidably happened. Confirmed live: ERPNext's Bin can lag Unicommerce
+    # on inbound receipts (a real item, COWMATBLK, showed 0 stock on both
+    # sides after this exact package's dispatch), and refusing to record the
+    # shipment over that gap doesn't undo the shipment -- it just leaves
+    # ERPNext's own records silently missing a real, already-completed
+    # Delivery Note. Scoped to this document only, not a global setting.
+    res.flags.ignore_negative_stock = True
     res.insert()
     res.submit()
     return res
