@@ -40,14 +40,14 @@ class UnicommerceClient:
         self._auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
         # Persisting the token (to share it with other clients) is best-effort:
-        # a save failure must not block the retry, which already has the new
-        # token in-memory.
+        # a persist failure must not block the retry, which already has the new
+        # token in-memory. Reuses the doctype's own _save_retry_once (built for
+        # exactly this race -- two concurrent clients each refreshing against
+        # their own in-memory copy) instead of a raw save(), which had no
+        # retry and was confirmed live to fail with TimestampMismatchError on
+        # every collision (2,000+ occurrences).
         try:
-            # Background jobs lack write permission on the settings Single;
-            # bypass is intentional so token sharing works without a logged-in
-            # session user.
-            self.settings.flags.ignore_permissions = True
-            self.settings.save()
+            self.settings._save_retry_once()
         except Exception:
             frappe.log_error("Unicommerce: failed to persist refreshed access token")
 
