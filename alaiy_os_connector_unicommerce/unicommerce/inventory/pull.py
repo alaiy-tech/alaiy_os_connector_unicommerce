@@ -127,10 +127,32 @@ def _pull_warehouse(client, warehouse, facility_code):
         doc.company = company
         doc.purpose = "Stock Reconciliation"
         for change in batch:
-            doc.append("items", change)
+            doc.append("items", {
+                **change,
+                # Confirmed live: without this, submit fails with "Valuation
+                # Rate required" for any item that's never had a cost basis
+                # recorded -- and ERPNext rejects the ENTIRE Stock
+                # Reconciliation over one such row, so a single un-costed
+                # item (PJBFT116, seen live) blocked every other item in the
+                # same 100-item batch. Same fix already used in
+                # pull_stock_from_shopify.py's equivalent reconciliation.
+                "allow_zero_valuation_rate": 1,
+            })
         doc.flags.ignore_permissions = True
-        doc.insert(ignore_permissions=True)
-        doc.submit()
+        try:
+            doc.insert(ignore_permissions=True)
+            doc.submit()
+        except Exception:
+            frappe.db.rollback()
+            # One bad batch must not stop every batch after it -- confirmed
+            # live this loop has no such guard, so an early batch's failure
+            # for ANY reason silently prevented every later batch for this
+            # same warehouse from ever being attempted.
+            frappe.log_error(
+                title=f"Unicommerce inventory pull: batch reconciliation failed for {warehouse}",
+                message=frappe.get_traceback(),
+            )
+            continue
 
 
 def _get_synced_items() -> dict:
