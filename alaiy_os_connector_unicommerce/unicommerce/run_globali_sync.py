@@ -51,19 +51,27 @@ def run():
     print("DONE", flush=True)
 
 
-def backfill_returns(package_codes):
-    """One-off: force the invoice-mirror + return-sync path for specific
-    packages, instead of waiting for the next scheduled
-    update_sales_order_status/update_shipping_package_status tick.
+def backfill_returns(days=90):
+    """One-off: force the invoice-mirror + return-sync path for EVERY
+    RETURNED/RETURN_EXPECTED package in the lookback window, instead of
+    waiting for the next scheduled update_sales_order_status/
+    update_shipping_package_status tick.
 
     Needed because cd966b0's fix only takes effect inside
     _create_sales_invoices/create_rto_return, and neither run() above nor
-    the scheduler had touched these specific packages since deploying it.
+    the scheduler had touched any of these packages since deploying it.
+    Discovers the real list from Unicommerce itself rather than a
+    hardcoded set -- the 9 packages found earlier via Error Log were only
+    the ones that happened to hit that specific error message; there is no
+    reason to assume they're the only returns affected.
 
     Usage:
         bench --site <site> execute \
+            alaiy_os_connector_unicommerce.unicommerce.run_globali_sync.backfill_returns
+        # or with a wider/narrower window:
+        bench --site <site> execute \
             alaiy_os_connector_unicommerce.unicommerce.run_globali_sync.backfill_returns \
-            --kwargs "{'package_codes': ['GLOB00051', 'GLOB00044', ...]}"
+            --kwargs "{'days': 180}"
     """
     from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
     from alaiy_os_connector_unicommerce.unicommerce.client.manifest import search_shipping_packages
@@ -73,17 +81,15 @@ def backfill_returns(package_codes):
     )
     from alaiy_os_connector_unicommerce.unicommerce.order.pull import _create_sales_invoices
     from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import create_rto_return
+    from alaiy_os_connector_unicommerce.unicommerce.order.status import SHIPMENT_RETURN_STATES
 
     client = UnicommerceClient()
-    all_packages = search_shipping_packages(client, updated_since=60 * 24 * 60, facility_code="globali") or []
-    by_code = {p["code"]: p for p in all_packages}
+    all_packages = search_shipping_packages(client, updated_since=days * 24 * 60, facility_code="globali") or []
+    returned_packages = [p for p in all_packages if p.get("status") in SHIPMENT_RETURN_STATES]
+    print(f"{len(all_packages)} packages scanned, {len(returned_packages)} in a return state", flush=True)
 
-    for code in package_codes:
-        package = by_code.get(code)
-        if not package:
-            print(f"{code}: not found in the last 60 days of packages", flush=True)
-            continue
-
+    for package in returned_packages:
+        code = package["code"]
         so_code = package.get("saleOrderCode")
         sales_order = frappe.db.get_value("Sales Order", {ORDER_CODE_FIELD: so_code}, "name")
         if not sales_order:
