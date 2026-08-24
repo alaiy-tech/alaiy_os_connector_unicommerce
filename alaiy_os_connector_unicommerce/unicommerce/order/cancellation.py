@@ -92,7 +92,7 @@ def _serialize_items(trans_items) -> str:
 
 
 def create_rto_return(package_info, client):
-    """Create a draft credit note when a package is expected to be returned to origin."""
+    """Create and submit a credit note when a package is expected to be returned to origin."""
     package_code = package_info["code"]
 
     invoice = frappe.db.get_value(
@@ -118,7 +118,9 @@ def create_rto_return(package_info, client):
     so_data = get_sales_order(client, invoice.get(ORDER_CODE_FIELD))
     rto_returns = [r for r in so_data["returns"] if r["type"] == "Courier Returned" and r["code"] == package_code]
     if rto_returns:
-        create_credit_note(invoice.name).save()
+        credit_note = create_credit_note(invoice.name)
+        credit_note.save()
+        credit_note.submit()
 
 
 def get_return_warehouse(facility_code):
@@ -208,6 +210,7 @@ def create_cir_credit_note(so_data, return_data):
         _handle_partial_returns(credit_note, returned_si_items)
 
     credit_note.save()
+    credit_note.submit()
 
 
 def _handle_partial_returns(credit_note, returned_items: list[str]) -> None:
