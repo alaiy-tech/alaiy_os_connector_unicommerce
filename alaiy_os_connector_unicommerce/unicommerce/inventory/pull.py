@@ -93,6 +93,18 @@ def _pull_warehouse(client, warehouse, facility_code):
         batch = sku_codes[i:i + MAX_SKUS_PER_REQUEST]
         response = get_inventory_snapshot(client, sku_codes=batch, facility_code=facility_code)
         if not response or not response.get("successful"):
+            # Confirmed live: this was silently swallowing a real failure --
+            # a batch of ~5,900 SKUs in one request came back unsuccessful
+            # with zero logging, so the whole pull looked like it ran clean
+            # while applying nothing. Small batches (5 SKUs) worked fine in
+            # the same session, so this is very likely the request size, not
+            # a genuine "no data" response -- log enough to tell the two
+            # apart instead of guessing again next time.
+            frappe.log_error(
+                title=f"Unicommerce inventory pull: unsuccessful response for {warehouse} "
+                f"(batch of {len(batch)} SKUs)",
+                message=f"response={response}",
+            )
             continue
         for row in response.get("inventorySnapshots") or []:
             item_code = sku_to_item.get(row.get("itemTypeSKU"))
