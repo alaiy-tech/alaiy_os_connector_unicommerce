@@ -145,9 +145,16 @@ def create_credit_note(invoice_name):
 def check_and_update_customer_initiated_returns(orders, client) -> None:
     """Create a credit note for any customer-initiated return on recently changed orders."""
     for order in _filter_recent_orders(orders):
-        so_data = get_sales_order(client, order["code"])
-        if so_data:
-            sync_customer_initiated_returns(so_data)
+        try:
+            so_data = get_sales_order(client, order["code"])
+            if so_data:
+                sync_customer_initiated_returns(so_data)
+        except Exception:
+            frappe.log_error(
+                title=f"Unicommerce: customer-initiated return sync failed for order {order.get('code')}",
+                message=frappe.get_traceback(),
+            )
+            continue
 
 
 def sync_customer_initiated_returns(so_data):
