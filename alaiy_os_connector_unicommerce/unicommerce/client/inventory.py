@@ -16,6 +16,38 @@ def get_inventory_snapshot(client, sku_codes: list[str], facility_code: str, upd
         return response
 
 
+def search_itemtype_with_inventory(
+    client, facility_code: str, display_start: int = 0, display_length: int = 500,
+    category_code: str | None = None,
+):
+    """https://documentation.unicommerce.com/docs/search-itemtype.html
+
+    Unlike get_inventory_snapshot (which only returns SKUs updated within the
+    last 24 hours -- confirmed live, Unicommerce rejects any wider window
+    with "You can query for only one day snapshots"), this is a real paged
+    catalogue search with getInventorySnapshot=true, so it returns current
+    stock for every item regardless of when it last changed. Needed for a
+    full baseline pull -- an item with no recent order activity has nothing
+    for the snapshot endpoint to report, which is why brands with a long
+    tail of slow-moving SKUs never got an initial Bin row at all.
+    """
+    response, status = client.request(
+        endpoint="/services/rest/v1/product/itemType/search",
+        headers={"Facility": facility_code},
+        body={
+            "categoryCode": category_code,
+            "getInventorySnapshot": True,
+            "searchOptions": {
+                "displayStart": display_start,
+                "displayLength": display_length,
+                "getCount": True,
+            },
+        },
+    )
+    if status:
+        return response
+
+
 def bulk_inventory_update(client, facility_code: str, inventory_map: dict[str, int]):
     """Bulk update inventory on Unicommerce using SKU and qty (qty is the
     "total" quantity, not a delta).
