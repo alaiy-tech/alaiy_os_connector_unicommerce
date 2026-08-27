@@ -109,7 +109,16 @@ def _pull_warehouse(client, warehouse, facility_code):
     if not sku_to_item:
         return
 
-    changes = []
+    # Keyed by item_code -- itemType/search has no guaranteed stable sort
+    # across pages, so the same item can legitimately reappear on a later
+    # page as other rows shift underneath an in-progress paginated walk.
+    # Confirmed live: an unkeyed list produced duplicate (item_code,
+    # warehouse) rows in the same Stock Reconciliation, which ERPNext
+    # rejects outright ("Same item and warehouse combination already
+    # entered"), failing the whole batch. A dict naturally keeps only the
+    # latest value seen per item, which is what a reconciliation wants
+    # anyway -- current stock, not a history of every page it appeared on.
+    changes_by_item = {}
     seen_skus = set()
     display_start = 0
     for _ in range(MAX_PAGES_PER_WAREHOUSE):
@@ -140,12 +149,14 @@ def _pull_warehouse(client, warehouse, facility_code):
                 "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
             ) or 0)
             if new_qty != current_qty:
-                changes.append({"item_code": item_code, "warehouse": warehouse, "qty": new_qty})
+                changes_by_item[item_code] = {"item_code": item_code, "warehouse": warehouse, "qty": new_qty}
 
         display_start += SEARCH_PAGE_SIZE
         total_records = response.get("totalRecords") or 0
         if display_start >= total_records or not elements:
             break
+
+    changes = list(changes_by_item.values())
 
     missing_skus = set(sku_to_item.keys()) - seen_skus
     if missing_skus:
