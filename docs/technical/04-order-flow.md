@@ -18,8 +18,14 @@
   single Unicommerce order can repeat the same SKU across multiple
   `saleOrderItems` lines (partial allocations/batches), which is blocked by
   default.
-- If `only_sync_completed_orders` is set, Sales Invoices are created inline
-  per shipping package instead of waiting for the normal invoice flow.
+- `only_sync_completed_orders` only filters which orders get **pulled**
+  (only Unicommerce-status `COMPLETE` orders, when set) — it no longer gates
+  invoicing. On every pull, a Sales Invoice is attempted for any shipping
+  package already in `fulfillment/invoice.py`'s `INVOICED_STATE` set
+  (`PACKED`/`READY_TO_SHIP`/`DISPATCHED`/`MANIFESTED`/`SHIPPED`/`DELIVERED`),
+  regardless of the setting — a freshly-placed order still in `CREATED` has
+  no packages in that set yet, so nothing is attempted for it until it
+  actually ships.
 
 ## Order status sync — `unicommerce/order/status.py`
 

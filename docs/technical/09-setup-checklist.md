@@ -1,24 +1,28 @@
 # Setup checklist for a new client/site
 
-1. Install this app on the site.
-2. Enable **Unicommerce Connector Settings** — tick `is_enabled` and save.
-   This fires custom-field setup automatically, but **only on the 0→1
-   transition** of that checkbox — installing the app alone does NOT
-   provision the custom fields (`unicommerce_order_code` etc. on Sales
-   Order/Invoice/Delivery Note/Item/...). Skipping this step is why a fresh
-   site can throw `Unknown column 'unicommerce_order_code' in 'WHERE'` the
-   first time any connector API (dashboard stats, order pull, ...) runs.
-   - If the checkbox was already toggled without fields showing up (or the
-     doc was inserted/patched directly, bypassing `on_update`), run the
-     provisioning function directly instead of re-toggling:
+1. Install this app on the site and run `bench migrate`. `after_migrate` now
+   calls `setup_custom_fields()` unconditionally on every migrate (it used to
+   run only on the connector's 0→1 `is_enabled` transition) — so a plain
+   install + migrate is enough on its own to provision the custom fields
+   (`unicommerce_order_code` etc. on Sales Order/Invoice/Delivery Note/Item/
+   Purchase Order/Purchase Receipt/...), with no separate "enable the
+   connector first" step required before the schema is real. `bench
+   install-app` alone does not call `after_migrate`, so a migrate is still
+   required.
+   - If a site is somehow still missing these fields (an old install that
+     predates this fix, a doc inserted/patched directly bypassing
+     `on_update`), run the provisioning function directly:
      ```bash
      bench --site <site> execute alaiy_os_connector_unicommerce.setup.install.setup_custom_fields
      ```
+2. Enable **Unicommerce Connector Settings** — tick `is_enabled` and save.
+   This is now purely the operational on/off switch (auth, scheduler jobs,
+   custom field creation already happened at migrate time).
 3. Fill `unicommerce_site`, `username`, `password`, `client_id`,
    `unicommerce_company`, `default_customer_group`,
    `sales_order_series`/`sales_invoice_series`.
 4. Add at least one **Unicommerce Warehouses** row (facility ↔ local
-   warehouse). Required for inventory push, PO/GRN sync, and delivery note
+   warehouse). Required for inventory pull, PO/GRN sync, and delivery note
    polling — all facility-scoped.
 5. Add one **Unicommerce Channel** row per real marketplace this tenant
    sells through, `enabled=1`. **Order pull imports nothing at all until at
