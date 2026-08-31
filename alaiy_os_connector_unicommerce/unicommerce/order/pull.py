@@ -94,16 +94,25 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
     concern and should run for any pulled order regardless, matching
     real-world orders that ship after being pulled in a non-final state).
 
-    Only attempts packages in the same INVOICED_STATE set fulfillment/
-    invoice.py already filters on -- a freshly placed order has shipping
-    packages still in CREATED, which Unicommerce has no invoice for yet;
-    without this filter, get_sales_invoice would 400 on every such package
-    on every single pull cycle until it ships."""
+    Attempts packages in INVOICED_STATE (fulfillment/invoice.py's own filter
+    -- a freshly placed order has shipping packages still in CREATED, which
+    Unicommerce has no invoice for yet; without this filter, get_sales_invoice
+    would 400 on every such package on every single pull cycle until it
+    ships) PLUS RETURNED/RETURN_EXPECTED. Confirmed live: a package that has
+    already returned still carries a real invoiceCode from Unicommerce (it
+    was invoiced before it returned), but RETURNED/RETURN_EXPECTED are not in
+    INVOICED_STATE, so this used to skip mirroring the invoice forever once a
+    package returned -- which meant it could never get a local Sales Invoice,
+    which meant create_rto_return/create_cir_credit_note could never attach
+    a credit note to it either. That silently blocked every real RTO/customer
+    return on an order whose package had already flipped state by the time
+    this ran (9 real packages found stuck this way since 20 Aug)."""
     from alaiy_os_connector_unicommerce.unicommerce.client.invoicing import get_sales_invoice
     from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import INVOICED_STATE, create_sales_invoice
 
     facility_code = sales_order.get(FACILITY_CODE_FIELD)
-    packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in INVOICED_STATE]
+    mirror_eligible_states = INVOICED_STATE + ["RETURNED", "RETURN_EXPECTED"]
+    packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in mirror_eligible_states]
     for package in packages:
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)
         if not invoice_data or not invoice_data.get("invoice"):

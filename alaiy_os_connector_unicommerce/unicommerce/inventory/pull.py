@@ -13,13 +13,26 @@ item) -- same "real accounting document, not a raw Bin write" convention as
 every other connector in this codebase.
 
 Field mapping confirmed against the real vendored Unicommerce docs
-(docs/unicommerce-docs/client/inventory/inventory-snapshot.md):
-  inventorySnapshots[].itemTypeSKU -> Item[ITEM_EXTERNAL_ID_FIELD] (the same
-                                       identity field push.py already uses)
-  inventorySnapshots[].inventory   -> Bin.actual_qty (the "available
-                                       quantity" -- openSale/reserved stock
-                                       is deliberately not subtracted here,
-                                       same as push.py's own actual_qty use)
+(docs/unicommerce-docs/client/product/search-itemtype.md):
+  elements[].skuCode                          -> Item[ITEM_EXTERNAL_ID_FIELD]
+                                                   (the same identity field
+                                                   push.py already uses)
+  elements[].inventorySnapshots[].inventory   -> Bin.actual_qty (the
+                                                   "available quantity" --
+                                                   openSale/reserved stock is
+                                                   deliberately not
+                                                   subtracted here, same as
+                                                   push.py's own actual_qty
+                                                   use)
+
+Pulled via itemType/search with getInventorySnapshot=true, NOT the
+inventorySnapshot/get endpoint -- confirmed live that endpoint only
+returns SKUs updated within the last 24 hours (Unicommerce rejects any
+wider window with "You can query for only one day snapshots"), so a
+brand with a long tail of slow-moving SKUs never got an initial Bin row:
+Quiz Clothing had stock rows for only 43 of 4,136 catalogue items, all
+43 being the ones with recent order activity. itemType/search returns
+current stock for every item regardless of when it last changed.
 
 Group warehouses are skipped, not aggregated/distributed -- Stock
 Reconciliation requires a real leaf warehouse; guessing how a Unicommerce
@@ -32,11 +45,20 @@ from frappe.query_builder import DocType
 from frappe.utils import cint, flt
 
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
-from alaiy_os_connector_unicommerce.unicommerce.client.inventory import get_inventory_snapshot
+from alaiy_os_connector_unicommerce.unicommerce.client.inventory import search_itemtype_with_inventory
 from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD, SETTINGS_DOCTYPE
 from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
-MAX_SKUS_PER_REQUEST = 10000  # Unicommerce's own documented limit per call
+# Page size for itemType/search -- comfortably under any practical response
+# size limit; the same 500-per-request ceiling that worked reliably for the
+# old snapshot endpoint's batches.
+SEARCH_PAGE_SIZE = 500
+
+# Hard ceiling on total pages per warehouse per run, purely as a runaway
+# guard against an unexpected totalRecords (e.g. a facility misconfiguration
+# reporting far more items than the real catalogue) turning one run into an
+# unbounded loop.
+MAX_PAGES_PER_WAREHOUSE = 200
 
 # ERPNext core auto-enqueues Stock Reconciliation submit as a background job
 # once an item count exceeds this (stock_reconciliation.py's own threshold) --
@@ -87,23 +109,65 @@ def _pull_warehouse(client, warehouse, facility_code):
     if not sku_to_item:
         return
 
-    sku_codes = list(sku_to_item.keys())
-    changes = []
-    for i in range(0, len(sku_codes), MAX_SKUS_PER_REQUEST):
-        batch = sku_codes[i:i + MAX_SKUS_PER_REQUEST]
-        response = get_inventory_snapshot(client, sku_codes=batch, facility_code=facility_code)
+    # Keyed by item_code -- itemType/search has no guaranteed stable sort
+    # across pages, so the same item can legitimately reappear on a later
+    # page as other rows shift underneath an in-progress paginated walk.
+    # Confirmed live: an unkeyed list produced duplicate (item_code,
+    # warehouse) rows in the same Stock Reconciliation, which ERPNext
+    # rejects outright ("Same item and warehouse combination already
+    # entered"), failing the whole batch. A dict naturally keeps only the
+    # latest value seen per item, which is what a reconciliation wants
+    # anyway -- current stock, not a history of every page it appeared on.
+    changes_by_item = {}
+    seen_skus = set()
+    display_start = 0
+    for _ in range(MAX_PAGES_PER_WAREHOUSE):
+        response = search_itemtype_with_inventory(
+            client, facility_code=facility_code,
+            display_start=display_start, display_length=SEARCH_PAGE_SIZE,
+        )
         if not response or not response.get("successful"):
-            continue
-        for row in response.get("inventorySnapshots") or []:
-            item_code = sku_to_item.get(row.get("itemTypeSKU"))
+            frappe.log_error(
+                title=f"Unicommerce inventory pull: unsuccessful response for {warehouse} "
+                f"(page starting at {display_start})",
+                message=f"response={response}",
+            )
+            break
+
+        elements = response.get("elements") or []
+        for element in elements:
+            item_code = sku_to_item.get(element.get("skuCode"))
             if not item_code:
                 continue
-            new_qty = flt(row.get("inventory"))
+            seen_skus.add(element.get("skuCode"))
+            snapshots = element.get("inventorySnapshots") or []
+            snapshot = next((s for s in snapshots if s.get("facility") == facility_code), None)
+            if snapshot is None:
+                continue
+            new_qty = flt(snapshot.get("inventory"))
             current_qty = flt(frappe.db.get_value(
                 "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
             ) or 0)
             if new_qty != current_qty:
-                changes.append({"item_code": item_code, "warehouse": warehouse, "qty": new_qty})
+                changes_by_item[item_code] = {"item_code": item_code, "warehouse": warehouse, "qty": new_qty}
+
+        display_start += SEARCH_PAGE_SIZE
+        total_records = response.get("totalRecords") or 0
+        if display_start >= total_records or not elements:
+            break
+
+    changes = list(changes_by_item.values())
+
+    missing_skus = set(sku_to_item.keys()) - seen_skus
+    if missing_skus:
+        # Not a failure -- some mapped SKUs may genuinely not exist in this
+        # facility's catalogue (multi-facility items, since-delisted items).
+        # Logged as a warning so a real coverage regression is visible
+        # without treating every run as an error.
+        frappe.log_error(
+            title=f"Unicommerce inventory pull: {len(missing_skus)} mapped SKUs not found in {warehouse}",
+            message=f"facility={facility_code}\nsample={list(missing_skus)[:50]}",
+        )
 
     if not changes:
         return
@@ -115,10 +179,32 @@ def _pull_warehouse(client, warehouse, facility_code):
         doc.company = company
         doc.purpose = "Stock Reconciliation"
         for change in batch:
-            doc.append("items", change)
+            doc.append("items", {
+                **change,
+                # Confirmed live: without this, submit fails with "Valuation
+                # Rate required" for any item that's never had a cost basis
+                # recorded -- and ERPNext rejects the ENTIRE Stock
+                # Reconciliation over one such row, so a single un-costed
+                # item (PJBFT116, seen live) blocked every other item in the
+                # same 100-item batch. Same fix already used in
+                # pull_stock_from_shopify.py's equivalent reconciliation.
+                "allow_zero_valuation_rate": 1,
+            })
         doc.flags.ignore_permissions = True
-        doc.insert(ignore_permissions=True)
-        doc.submit()
+        try:
+            doc.insert(ignore_permissions=True)
+            doc.submit()
+        except Exception:
+            frappe.db.rollback()
+            # One bad batch must not stop every batch after it -- confirmed
+            # live this loop has no such guard, so an early batch's failure
+            # for ANY reason silently prevented every later batch for this
+            # same warehouse from ever being attempted.
+            frappe.log_error(
+                title=f"Unicommerce inventory pull: batch reconciliation failed for {warehouse}",
+                message=frappe.get_traceback(),
+            )
+            continue
 
 
 def _get_synced_items() -> dict:

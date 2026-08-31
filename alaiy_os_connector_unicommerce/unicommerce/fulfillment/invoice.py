@@ -187,7 +187,25 @@ def _fetch_and_sync_invoice(
 
     for package in shipping_packages:
         invoice_response = invoice_responses.get(package) or {}
-        invoice_data = get_sales_invoice_data(client, package, facility_code)["invoice"]
+        invoice_details = get_sales_invoice_data(client, package, facility_code)
+        if not invoice_details or not invoice_details.get("invoice"):
+            # get_sales_invoice_data returns None on any failed request --
+            # confirmed live, every call was failing with 403 "Forbidden:
+            # access resource MINIMAL is needed" (a Unicommerce-side API
+            # permission gap on this connector's token, not something fixable
+            # here). The blind subscript below crashed with a bare
+            # TypeError on every single invoice this order had -- 58,000+
+            # occurrences over a week, all originating from the same root
+            # cause. Skip this package's invoice sync and let the caller's
+            # per-order try/except (bulk_generate_invoices) log and move on,
+            # instead of raising an opaque TypeError that gives no hint the
+            # real cause is a permission grant, not a code bug.
+            frappe.log_error(
+                title=f"Unicommerce: could not fetch invoice details for package {package}",
+                message=f"unicommerce_so_code={unicommerce_so_code}, facility={facility_code}",
+            )
+            continue
+        invoice_data = invoice_details["invoice"]
         label_pdf = fetch_label_pdf(package, invoice_response, client=client, facility_code=facility_code)
         create_sales_invoice(
             invoice_data,

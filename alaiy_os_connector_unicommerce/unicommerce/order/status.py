@@ -40,22 +40,49 @@ def update_sales_order_status():
 
     _update_order_status_fields(valid_orders)
 
+    # Each stage below is independent -- a real order in one stage failing
+    # (a malformed return, an API hiccup) must not block the OTHER stages for
+    # every other order in this same run. Confirmed live this class of bug
+    # was silently dropping real Unicommerce returns (see
+    # prepare_delivery_note's matching fix and its docstring for the RTO
+    # case) -- a single unhandled exception here would also have skipped
+    # invoice generation for every other newly-completed order in the batch.
     fully_cancelled_orders = [d["code"] for d in valid_orders if d["status"] == "CANCELLED"]
     if fully_cancelled_orders:
-        fully_cancel_orders(fully_cancelled_orders)
+        try:
+            fully_cancel_orders(fully_cancelled_orders)
+        except Exception:
+            frappe.log_error(title="Unicommerce: fully_cancel_orders failed", message=frappe.get_traceback())
 
     probable_partial_cancels = [d for d in valid_orders if d["status"] in PARTIAL_CANCELLED_STATES]
     if probable_partial_cancels:
-        update_partially_cancelled_orders(probable_partial_cancels, client=client)
+        try:
+            update_partially_cancelled_orders(probable_partial_cancels, client=client)
+        except Exception:
+            frappe.log_error(
+                title="Unicommerce: update_partially_cancelled_orders failed", message=frappe.get_traceback()
+            )
 
     probable_returns = [d for d in valid_orders if d["status"] in RETURN_POSSIBLE_STATE]
     if probable_returns:
-        check_and_update_customer_initiated_returns(probable_returns, client=client)
+        try:
+            check_and_update_customer_initiated_returns(probable_returns, client=client)
+        except Exception:
+            frappe.log_error(
+                title="Unicommerce: check_and_update_customer_initiated_returns failed",
+                message=frappe.get_traceback(),
+            )
 
     if settings.get("auto_generate_invoice"):
         newly_completed = [d["code"] for d in valid_orders if d["status"] in RETURN_POSSIBLE_STATE]
         if newly_completed:
-            _generate_invoices_for_newly_completed_orders(newly_completed)
+            try:
+                _generate_invoices_for_newly_completed_orders(newly_completed)
+            except Exception:
+                frappe.log_error(
+                    title="Unicommerce: _generate_invoices_for_newly_completed_orders failed",
+                    message=frappe.get_traceback(),
+                )
 
 
 def _generate_invoices_for_newly_completed_orders(order_codes):
@@ -128,7 +155,14 @@ def update_shipping_package_status():
 
         returning_packages = [p for p in valid_packages if p["status"] in SHIPMENT_RETURN_STATES]
         for package in returning_packages:
-            create_rto_return(package, client=client)
+            try:
+                create_rto_return(package, client=client)
+            except Exception:
+                frappe.log_error(
+                    title=f"Unicommerce: create_rto_return failed for package {package.get('code')}",
+                    message=frappe.get_traceback(),
+                )
+                continue
 
 
 def _track_order_shipment_status(packages):

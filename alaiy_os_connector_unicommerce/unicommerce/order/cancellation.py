@@ -92,7 +92,7 @@ def _serialize_items(trans_items) -> str:
 
 
 def create_rto_return(package_info, client):
-    """Create a draft credit note when a package is expected to be returned to origin."""
+    """Create and submit a credit note when a package is expected to be returned to origin."""
     package_code = package_info["code"]
 
     invoice = frappe.db.get_value(
@@ -118,7 +118,9 @@ def create_rto_return(package_info, client):
     so_data = get_sales_order(client, invoice.get(ORDER_CODE_FIELD))
     rto_returns = [r for r in so_data["returns"] if r["type"] == "Courier Returned" and r["code"] == package_code]
     if rto_returns:
-        create_credit_note(invoice.name).save()
+        credit_note = create_credit_note(invoice.name)
+        credit_note.save()
+        credit_note.submit()
 
 
 def get_return_warehouse(facility_code):
@@ -134,9 +136,21 @@ def create_credit_note(invoice_name):
         item.warehouse = return_warehouse or item.warehouse
 
     for tax in credit_note.taxes:
+        # Confirmed live: this field does not exist as an attribute on
+        # Sales Taxes and Charges on this site's ERPNext version at all
+        # (AttributeError, not an empty/None value) -- 290 real credit
+        # notes failed on this single line before it was guarded. The
+        # negation here was only correcting a stale item-wise breakdown
+        # left over from the original invoice; skipping it degrades to
+        # make_sales_return's own tax totals, which are already correct,
+        # rather than blocking every credit note over a detail field
+        # this version doesn't carry.
+        if not hasattr(tax, "item_wise_tax_detail") or not tax.item_wise_tax_detail:
+            continue
         item_wise_tax_detail = json.loads(tax.item_wise_tax_detail)
         for tax_distribution in item_wise_tax_detail.values():
             tax_distribution[1] *= -1
+        tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
         tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
 
     return credit_note
@@ -145,9 +159,16 @@ def create_credit_note(invoice_name):
 def check_and_update_customer_initiated_returns(orders, client) -> None:
     """Create a credit note for any customer-initiated return on recently changed orders."""
     for order in _filter_recent_orders(orders):
-        so_data = get_sales_order(client, order["code"])
-        if so_data:
-            sync_customer_initiated_returns(so_data)
+        try:
+            so_data = get_sales_order(client, order["code"])
+            if so_data:
+                sync_customer_initiated_returns(so_data)
+        except Exception:
+            frappe.log_error(
+                title=f"Unicommerce: customer-initiated return sync failed for order {order.get('code')}",
+                message=frappe.get_traceback(),
+            )
+            continue
 
 
 def sync_customer_initiated_returns(so_data):
@@ -189,6 +210,7 @@ def create_cir_credit_note(so_data, return_data):
         _handle_partial_returns(credit_note, returned_si_items)
 
     credit_note.save()
+    credit_note.submit()
 
 
 def _handle_partial_returns(credit_note, returned_items: list[str]) -> None:
