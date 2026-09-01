@@ -30,11 +30,16 @@ def _parse(detail):
     items = detail.get("returnSaleOrderItems") or []
     item = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
 
-    reason = value.get("rtoReason") or item.get("marketplaceReturnReason") or item.get("returnRemarks")
-    courier = value.get("rtoCourierName") or value.get("courierName")
+    reason = (value.get("rtoReason") or item.get("marketplaceReturnReason")
+              or item.get("returnRemarks") or item.get("trackingStatus")
+              or item.get("courierStatus"))
+    courier = (value.get("rtoCourierName") or value.get("courierName")
+               or value.get("rtoShippingProviderCode") or value.get("shippingProviderCode"))
 
     addresses = detail.get("returnAddressDetailsList") or []
-    pickup = next((a for a in addresses if a.get("type") == "PICKUP"), None) or (addresses[0] if addresses else {})
+    pickup = (next((a for a in addresses if a.get("type") == "PICKUP"), None)
+              or next((a for a in addresses if a.get("type") == "SHIPPING"), None)
+              or (addresses[0] if addresses else {}))
     return reason, courier, pickup.get("pincode")
 
 
@@ -77,7 +82,38 @@ def demo():
     reason, _, _ = _parse({"returnSaleOrderValue": {"rtoReason": "Refused"}})
     assert reason == "Refused", reason
 
-    print("OK: RTO/customer reason precedence, PICKUP pincode, empty payloads, dict-or-list")
+    # A REAL Flipkart RTO payload (globali, package GLOB07305, 1 Sep 2026).
+    # Every documented reason field and both courier-name fields are null --
+    # this shape is why the trackingStatus/shippingProviderCode fallbacks and
+    # the SHIPPING address tier exist. Docs alone would have shipped three
+    # permanently empty fields.
+    reason, courier, pin = _parse({
+        "returnSaleOrderItems": [{
+            "marketplaceReturnReason": None, "returnRemarks": None,
+            "courierStatus": "COURIER_RETURN-DELIVERED",
+            "trackingStatus": "RTO_DELIVERED_TO_SELLER",
+        }],
+        # NOTE: a bare dict here, though the docs type it as a list.
+        "returnSaleOrderValue": {
+            "rtoReason": None, "rtoCourierName": None, "courierName": None,
+            "rtoShippingProviderCode": "E-Kart Logistics",
+            "shippingProviderCode": "E-Kart Logistics",
+        },
+        "returnAddressDetailsList": [
+            {"type": "SHIPPING", "pincode": "281306"},
+            {"type": "BILLING", "pincode": "281306"},
+        ],
+    })
+    assert reason == "RTO_DELIVERED_TO_SELLER", f"live RTO must fall back to tracking status, got {reason}"
+    assert courier == "E-Kart Logistics", f"live RTO must fall back to provider code, got {courier}"
+    assert pin == "281306", pin
+
+    # BILLING must never win over SHIPPING when both are present.
+    _, _, pin = _parse({"returnAddressDetailsList": [
+        {"type": "BILLING", "pincode": "111111"}, {"type": "SHIPPING", "pincode": "222222"}]})
+    assert pin == "222222", f"SHIPPING must beat BILLING, got {pin}"
+
+    print("OK: reason/courier precedence incl. live-RTO fallbacks, address tiers, empty payloads, dict-or-list")
 
 
 if __name__ == "__main__":

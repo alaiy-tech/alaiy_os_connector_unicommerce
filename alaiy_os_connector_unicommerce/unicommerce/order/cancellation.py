@@ -48,15 +48,39 @@ def apply_return_details(credit_note, client, facility_code, return_type,
     items = detail.get("returnSaleOrderItems") or []
     item = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
 
-    # RTO carries rtoReason; a customer return carries the marketplace's own
-    # reason on the item. Neither is present on the other kind.
-    reason = value.get("rtoReason") or item.get("marketplaceReturnReason") or item.get("returnRemarks")
-    courier = value.get("rtoCourierName") or value.get("courierName")
+    # Confirmed against live Flipkart RTO data: rtoReason,
+    # marketplaceReturnReason and returnRemarks are all null on a real RTO --
+    # the only signal of WHY it came back is the courier/tracking status
+    # ("COURIER_RETURN-DELIVERED", "RTO_DELIVERED_TO_SELLER"). Fall through to
+    # those rather than storing an empty reason, and keep the explicit reason
+    # fields first for the marketplaces that do populate them.
+    reason = (
+        value.get("rtoReason")
+        or item.get("marketplaceReturnReason")
+        or item.get("returnRemarks")
+        or item.get("trackingStatus")
+        or item.get("courierStatus")
+    )
 
-    # Pickup address is where it actually came back from; fall back to the
-    # first address only if no PICKUP row exists.
+    # Same story for the courier: both name fields are null live, while the
+    # shipping provider code carries the real carrier ("E-Kart Logistics").
+    courier = (
+        value.get("rtoCourierName")
+        or value.get("courierName")
+        or value.get("rtoShippingProviderCode")
+        or value.get("shippingProviderCode")
+    )
+
+    # Where it came back from. Live payloads carry SHIPPING/BILLING and often
+    # no PICKUP row at all, so prefer PICKUP, then SHIPPING, then whatever is
+    # first -- BILLING is the customer's billing address and is the least
+    # meaningful for return-origin analysis.
     addresses = detail.get("returnAddressDetailsList") or []
-    pickup = next((a for a in addresses if a.get("type") == "PICKUP"), None) or (addresses[0] if addresses else {})
+    pickup = (
+        next((a for a in addresses if a.get("type") == "PICKUP"), None)
+        or next((a for a in addresses if a.get("type") == "SHIPPING"), None)
+        or (addresses[0] if addresses else {})
+    )
 
     if reason:
         credit_note.set(RETURN_REASON_FIELD, reason)
