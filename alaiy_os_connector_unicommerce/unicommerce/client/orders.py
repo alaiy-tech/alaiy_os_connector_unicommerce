@@ -20,6 +20,29 @@ def get_sales_order(client, order_code: str):
         return order["saleOrderDTO"]
 
 
+def get_return(client, facility_code: str, shipment_code: str | None = None,
+               reverse_pickup_code: str | None = None):
+    """Return detail for one shipment or reverse pickup.
+
+    https://documentation.unicommerce.com/docs/return-get.html
+
+    saleorder/get's own `returns` list carries only enough to tell RTO from a
+    customer return; the reason, courier and pickup address live here and
+    nowhere else. Needs one of shipmentCode / reversePickupCode -- Unicommerce
+    rejects a call with neither.
+    """
+    if not (shipment_code or reverse_pickup_code):
+        return None
+
+    response, status = client.request(
+        endpoint="/services/rest/v1/oms/return/get",
+        body={"shipmentCode": shipment_code, "reversePickupCode": reverse_pickup_code},
+        headers={"Facility": facility_code},
+    )
+    if status:
+        return response
+
+
 def search_sales_order(
     client,
     from_date: str | None = None,

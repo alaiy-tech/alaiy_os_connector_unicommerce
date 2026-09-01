@@ -10,11 +10,60 @@ import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
 from erpnext.controllers.accounts_controller import update_child_qty_rate
 
-from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
+from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_return, get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
     CHANNEL_ID_FIELD, FACILITY_CODE_FIELD, ORDER_CODE_FIELD, ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD,
-    RETURN_CODE_FIELD, SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
+    RETURN_CODE_FIELD, RETURN_COURIER_FIELD, RETURN_PINCODE_FIELD, RETURN_REASON_FIELD,
+    RETURN_TYPE_FIELD, SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
 )
+
+
+def apply_return_details(credit_note, client, facility_code, return_type,
+                         shipment_code=None, reverse_pickup_code=None):
+    """Stamp why this came back onto the credit note.
+
+    Best-effort by design: the credit note is the real accounting document and
+    must not fail to save because a reporting detail could not be fetched --
+    /oms/return/get is a separate access resource, so a site can be entitled
+    to returns without being entitled to this. Sets the type either way, since
+    that is known from the caller without an API call.
+    """
+    credit_note.set(RETURN_TYPE_FIELD, return_type)
+
+    if not facility_code or not (shipment_code or reverse_pickup_code):
+        return
+    try:
+        detail = get_return(client, facility_code, shipment_code=shipment_code,
+                            reverse_pickup_code=reverse_pickup_code)
+    except Exception:
+        return
+    if not detail:
+        return
+
+    # returnSaleOrderValue is a list of one per shipment in practice, but the
+    # docs type it as a list -- take the first rather than assuming a dict.
+    values = detail.get("returnSaleOrderValue") or []
+    value = values[0] if isinstance(values, list) and values else (values if isinstance(values, dict) else {})
+
+    items = detail.get("returnSaleOrderItems") or []
+    item = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
+
+    # RTO carries rtoReason; a customer return carries the marketplace's own
+    # reason on the item. Neither is present on the other kind.
+    reason = value.get("rtoReason") or item.get("marketplaceReturnReason") or item.get("returnRemarks")
+    courier = value.get("rtoCourierName") or value.get("courierName")
+
+    # Pickup address is where it actually came back from; fall back to the
+    # first address only if no PICKUP row exists.
+    addresses = detail.get("returnAddressDetailsList") or []
+    pickup = next((a for a in addresses if a.get("type") == "PICKUP"), None) or (addresses[0] if addresses else {})
+
+    if reason:
+        credit_note.set(RETURN_REASON_FIELD, reason)
+    if courier:
+        credit_note.set(RETURN_COURIER_FIELD, courier)
+    if pickup.get("pincode"):
+        credit_note.set(RETURN_PINCODE_FIELD, pickup["pincode"])
 
 
 def fully_cancel_orders(unicommerce_order_codes: list[str]) -> None:
@@ -119,6 +168,10 @@ def create_rto_return(package_info, client):
     rto_returns = [r for r in so_data["returns"] if r["type"] == "Courier Returned" and r["code"] == package_code]
     if rto_returns:
         credit_note = create_credit_note(invoice.name)
+        apply_return_details(
+            credit_note, client, credit_note.get(FACILITY_CODE_FIELD), "RTO",
+            shipment_code=package_code,
+        )
         credit_note.save()
         credit_note.submit()
 
@@ -162,7 +215,7 @@ def check_and_update_customer_initiated_returns(orders, client) -> None:
         try:
             so_data = get_sales_order(client, order["code"])
             if so_data:
-                sync_customer_initiated_returns(so_data)
+                sync_customer_initiated_returns(so_data, client=client)
         except Exception:
             frappe.log_error(
                 title=f"Unicommerce: customer-initiated return sync failed for order {order.get('code')}",
@@ -171,14 +224,14 @@ def check_and_update_customer_initiated_returns(orders, client) -> None:
             continue
 
 
-def sync_customer_initiated_returns(so_data):
+def sync_customer_initiated_returns(so_data, client=None):
     customer_returns = [r for r in so_data.get("returns", []) if r["type"] == "Customer Returned"]
     for customer_return in customer_returns:
         if not frappe.db.exists("Sales Invoice", {RETURN_CODE_FIELD: customer_return["code"]}):
-            create_cir_credit_note(so_data, customer_return)
+            create_cir_credit_note(so_data, customer_return, client=client)
 
 
-def create_cir_credit_note(so_data, return_data):
+def create_cir_credit_note(so_data, return_data, client=None):
     sales_order_name = frappe.db.get_value("Sales Order", {ORDER_CODE_FIELD: so_data["code"]})
     so = frappe.get_doc("Sales Order", sales_order_name)
 
@@ -202,6 +255,11 @@ def create_cir_credit_note(so_data, return_data):
     credit_note = create_credit_note(si.name)
     credit_note.set(TRACKING_CODE_FIELD, return_data.get("trackingNumber"))
     credit_note.set(SHIPPING_PROVIDER_CODE, return_data.get("shippingProvider"))
+    apply_return_details(
+        credit_note, client, credit_note.get(FACILITY_CODE_FIELD), "CUSTOMER_RETURN",
+        shipment_code=return_data.get("code"),
+        reverse_pickup_code=return_data.get("reversePickupCode"),
+    )
 
     returned_so_codes = [item.get("saleOrderItemCode") for item in return_data.get("returnItems")]
     returned_si_items = [so_si_item_map.get(so_item_code_map.get(code)) for code in returned_so_codes]

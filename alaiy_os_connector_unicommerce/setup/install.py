@@ -176,7 +176,8 @@ def setup_custom_fields():
         ORDER_ITEM_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
         PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
         PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
-        PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, SHIPPING_METHOD_FIELD,
+        PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, RETURN_COURIER_FIELD,
+        RETURN_PINCODE_FIELD, RETURN_REASON_FIELD, RETURN_TYPE_FIELD, SHIPPING_METHOD_FIELD,
         SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE,
         TRACKING_CODE_FIELD, UNICOMMERCE_SHIPPING_ID, VENDOR_CODE_FIELD,
     )
@@ -367,6 +368,21 @@ def setup_custom_fields():
                  insert_after=MANIFEST_GENERATED_CHECK, read_only=1),
             dict(fieldname=RETURN_CODE_FIELD, label="Unicommerce Return Code", fieldtype="Small Text",
                  insert_after=IS_COD_CHECKBOX, read_only=1),
+            # Return detail lives only on /oms/return/get -- saleorder/get's
+            # `returns` list says a return happened, never why.
+            dict(fieldname=RETURN_TYPE_FIELD, label="Unicommerce Return Type", fieldtype="Select",
+                 options="\nRTO\nCUSTOMER_RETURN", insert_after=RETURN_CODE_FIELD, read_only=1,
+                 in_standard_filter=1,
+                 description="RTO = courier returned it before delivery. CUSTOMER_RETURN = the "
+                             "customer sent it back after delivery."),
+            dict(fieldname=RETURN_REASON_FIELD, label="Unicommerce Return Reason", fieldtype="Small Text",
+                 insert_after=RETURN_TYPE_FIELD, read_only=1,
+                 description="rtoReason for an RTO, marketplaceReturnReason for a customer return."),
+            dict(fieldname=RETURN_COURIER_FIELD, label="Unicommerce Return Courier", fieldtype="Small Text",
+                 insert_after=RETURN_REASON_FIELD, read_only=1),
+            dict(fieldname=RETURN_PINCODE_FIELD, label="Unicommerce Return Pincode", fieldtype="Data",
+                 insert_after=RETURN_COURIER_FIELD, read_only=1,
+                 description="Pickup-address pincode, for pincode-level return-risk analysis."),
             dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",
                  fieldtype="Currency", insert_after=RETURN_CODE_FIELD, read_only=1,
                  description="What the customer was charged for shipping -- NOT courier/fulfillment cost."),
