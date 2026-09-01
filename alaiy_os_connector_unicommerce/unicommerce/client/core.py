@@ -25,6 +25,8 @@ class UnicommerceClient:
         self.settings = frappe.get_single("Unicommerce Connector Settings")
         self.base_url = url or f"https://{self.settings.unicommerce_site}"
         self.access_token = access_token
+        # Endpoints this client has already reported a 403 for -- see request().
+        self._forbidden_endpoints: set[str] = set()
         self._initialize_auth()
 
     def _initialize_auth(self):
@@ -84,6 +86,29 @@ class UnicommerceClient:
                 )
             # Unicommerce puts useful detail in response text -- surface it in error logs.
             response.reason = cstr(response.reason) + cstr(response.text)
+
+            # A 403 means the API user lacks the access resource for this
+            # endpoint -- a standing account permission, not a transient
+            # failure. Retrying changes nothing, so log it once per endpoint
+            # per process instead of once per call: the scheduled 5-minute
+            # jobs walk the same packages every run, and logging a full
+            # traceback each time turned one missing Uniware permission into
+            # 9,000+ Error Log rows in a single morning, burying every real
+            # error on the site.
+            if response.status_code == 403:
+                if endpoint not in self._forbidden_endpoints:
+                    self._forbidden_endpoints.add(endpoint)
+                    frappe.log_error(
+                        title="Unicommerce: access denied (403)",
+                        message=(
+                            f"{endpoint}\n\n{cstr(response.text)[:1000]}\n\n"
+                            "The Unicommerce API user lacks the access resource for this "
+                            "endpoint. This is granted in Uniware, not fixable in code. "
+                            "Further 403s on this endpoint are suppressed for this run."
+                        ),
+                    )
+                return None, False
+
             response.raise_for_status()
         except Exception:
             if log_error:
