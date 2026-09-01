@@ -319,6 +319,10 @@ def setup_custom_fields():
                  fieldtype="Currency", insert_after=PACKAGE_TYPE_FIELD, read_only=1, allow_on_submit=1,
                  description="What the customer was charged for shipping -- NOT courier/fulfillment cost. "
                              "Real value only appears once invoiced; backfilled here from the invoice."),
+            dict(fieldname=IS_COD_CHECKBOX, label="Is COD?", fieldtype="Check",
+                 insert_after=CUSTOMER_SHIPPING_CHARGE_FIELD, read_only=1,
+                 description="Unicommerce reports payment mode per sale order. Without this field the "
+                             "value order/pull.py already reads is silently dropped on insert."),
         ],
         "Sales Order Item": [
             dict(fieldname=ORDER_ITEM_CODE_FIELD, label="Unicommerce Order Item Code", fieldtype="Data",
