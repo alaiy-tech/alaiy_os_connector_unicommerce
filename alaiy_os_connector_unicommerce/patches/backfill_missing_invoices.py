@@ -36,12 +36,29 @@ import frappe
 
 
 def _pending(from_date, to_date, limit):
+    """COMPLETE orders with no invoice, at OUR OWN facilities only.
+
+    Orders fulfilled from a marketplace's own centre (Amazon FBA, Flipkart FA)
+    are invoiced by the marketplace, not by us -- Unicommerce holds no invoice
+    for those packages, so /invoice/details/get correctly returns nothing and
+    retrying only burns API calls and fills the Error Log. Confirmed live on
+    globali: every one of 7,226 invoiced orders is the `globali` facility, and
+    every uninvoiced order is an AMAZON_*/FLIPKART_* one. Match by the facility
+    codes actually mapped to a warehouse rather than by name pattern, so a new
+    marketplace code does not silently start qualifying.
+    """
+    own = list(frappe.get_cached_doc(
+        "Unicommerce Connector Settings").get_integration_to_erpnext_wh_mapping().keys())
+    if not own:
+        return []
+
     return frappe.db.sql("""
         select so.name, so.transaction_date, so.grand_total
         from `tabSales Order` so
         where so.unicommerce_order_code is not null
           and so.docstatus = 1
           and so.unicommerce_order_status = 'COMPLETE'
+          and so.unicommerce_facility_code in %(own)s
           and so.transaction_date between %(from_date)s and %(to_date)s
           and not exists (
               select 1 from `tabSales Invoice` si
@@ -51,7 +68,7 @@ def _pending(from_date, to_date, limit):
         order by so.transaction_date
         {limit}
     """.format(limit=f"limit {int(limit)}" if limit else ""),
-        {"from_date": from_date, "to_date": to_date}, as_dict=True)
+        {"from_date": from_date, "to_date": to_date, "own": own}, as_dict=True)
 
 
 def run(from_date: str, to_date: str, dry_run: bool = False, limit: int | None = None):
@@ -97,6 +114,11 @@ def run(from_date: str, to_date: str, dry_run: bool = False, limit: int | None =
         frappe.db.commit()
         print(f"  ...{min(i + CHUNK, len(orders))}/{len(orders)}", flush=True)
 
-    remaining = len(_pending(from_date, to_date, None))
-    print(f"done -- {len(orders) - remaining} invoiced, {remaining} still without an invoice "
+    # Recount THIS batch, not the whole window -- a limited run measured against
+    # an unlimited recount reports a meaningless negative.
+    codes = frappe.db.get_all("Sales Order", filters={"name": ("in", [o.name for o in orders])},
+                              pluck="unicommerce_order_code")
+    done = frappe.db.count("Sales Invoice",
+                           {"unicommerce_order_code": ("in", codes), "is_return": 0})
+    print(f"done -- {done} of {len(orders)} now have an invoice, {len(orders) - done} still do not "
           f"(check Error Log for those)", flush=True)
