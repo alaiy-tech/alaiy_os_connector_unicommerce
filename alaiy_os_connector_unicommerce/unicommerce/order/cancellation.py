@@ -59,9 +59,45 @@ def _ensure_return_details(invoice_name, client, package_code=None, reverse_pick
                 values[RETURN_COURIER_FIELD] = courier
             if pincode:
                 values[RETURN_PINCODE_FIELD] = pincode
+            _heal_item_return_reasons(invoice_name, detail)
 
     if values:
         frappe.db.set_value("Sales Invoice", invoice_name, values, update_modified=False)
+
+
+def _heal_item_return_reasons(invoice_name, detail):
+    """Fill the per-SKU return fields on an existing credit note's item rows.
+
+    apply_return_details sets these while the document is being built, which
+    only ever reaches notes created after the fields existed. The document-level
+    reason is right for a single-SKU return -- 94% of them -- but a multi-SKU
+    return keeps only the first item's reason at that level, so the rest are
+    only recoverable per row.
+
+    Writes columns directly, same reasoning as the caller: these are read-only
+    reporting fields on a submitted document, and a cancel/amend cycle to set a
+    return reason would be far worse than the write.
+    """
+    by_sku = _return_reason_by_sku(detail)
+    if not by_sku:
+        return
+    rows = frappe.db.get_all(
+        "Sales Invoice Item", filters={"parent": invoice_name},
+        fields=["name", "item_code", ITEM_RETURN_REASON_FIELD],
+    )
+    for row in rows:
+        if row.get(ITEM_RETURN_REASON_FIELD):
+            continue
+        external = frappe.db.get_value("Item", row["item_code"], ITEM_EXTERNAL_ID_FIELD)
+        reason, qc = by_sku.get(external) or by_sku.get(row["item_code"]) or (None, None)
+        values = {}
+        if reason:
+            values[ITEM_RETURN_REASON_FIELD] = reason
+        if qc:
+            values[ITEM_RETURN_QC_FIELD] = qc
+        if values:
+            frappe.db.set_value("Sales Invoice Item", row["name"], values,
+                                update_modified=False)
 
 
 def _return_reason_by_sku(detail):
