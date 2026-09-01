@@ -18,28 +18,52 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 )
 
 
-def apply_return_details(credit_note, client, facility_code, return_type,
-                         shipment_code=None, reverse_pickup_code=None):
-    """Stamp why this came back onto the credit note.
+def _ensure_return_details(invoice_name, client, package_code=None, reverse_pickup_code=None,
+                           return_type=None):
+    """Fill the return-detail fields on a credit note that is missing them.
 
-    Best-effort by design: the credit note is the real accounting document and
-    must not fail to save because a reporting detail could not be fetched --
-    /oms/return/get is a separate access resource, so a site can be entitled
-    to returns without being entitled to this. Sets the type either way, since
-    that is known from the caller without an API call.
+    Complements apply_return_details, which only ever runs while a credit note
+    is being built. A note created before these fields existed -- or on a run
+    where the detail fetch returned nothing -- would otherwise stay blank for
+    good, since every caller skips a package that already has a credit note.
+
+    Writes columns directly: these are read-only reporting fields on a
+    submitted document, and cancel/amend to set a return reason would be far
+    worse than the write itself.
     """
-    credit_note.set(RETURN_TYPE_FIELD, return_type)
-
-    if not facility_code or not (shipment_code or reverse_pickup_code):
-        return
-    try:
-        detail = get_return(client, facility_code, shipment_code=shipment_code,
-                            reverse_pickup_code=reverse_pickup_code)
-    except Exception:
-        return
-    if not detail:
+    current = frappe.db.get_value(
+        "Sales Invoice", invoice_name,
+        [RETURN_TYPE_FIELD, RETURN_REASON_FIELD, FACILITY_CODE_FIELD], as_dict=True,
+    )
+    if not current or (current.get(RETURN_TYPE_FIELD) and current.get(RETURN_REASON_FIELD)):
         return
 
+    values = {}
+    if return_type and not current.get(RETURN_TYPE_FIELD):
+        values[RETURN_TYPE_FIELD] = return_type
+
+    facility_code = current.get(FACILITY_CODE_FIELD)
+    if facility_code and not current.get(RETURN_REASON_FIELD):
+        try:
+            detail = get_return(client, facility_code, shipment_code=package_code,
+                                reverse_pickup_code=reverse_pickup_code)
+        except Exception:
+            detail = None
+        if detail:
+            reason, courier, pincode = _parse_return_detail(detail)
+            if reason:
+                values[RETURN_REASON_FIELD] = reason
+            if courier:
+                values[RETURN_COURIER_FIELD] = courier
+            if pincode:
+                values[RETURN_PINCODE_FIELD] = pincode
+
+    if values:
+        frappe.db.set_value("Sales Invoice", invoice_name, values, update_modified=False)
+
+
+def _parse_return_detail(detail):
+    """Pull reason, courier and pincode out of an /oms/return/get payload."""
     # returnSaleOrderValue is a list of one per shipment in practice, but the
     # docs type it as a list -- take the first rather than assuming a dict.
     values = detail.get("returnSaleOrderValue") or []
@@ -81,13 +105,38 @@ def apply_return_details(credit_note, client, facility_code, return_type,
         or next((a for a in addresses if a.get("type") == "SHIPPING"), None)
         or (addresses[0] if addresses else {})
     )
+    return reason, courier, pickup.get("pincode")
 
+
+def apply_return_details(credit_note, client, facility_code, return_type,
+                         shipment_code=None, reverse_pickup_code=None):
+    """Stamp why this came back onto the credit note.
+
+    Best-effort by design: the credit note is the real accounting document and
+    must not fail to save because a reporting detail could not be fetched --
+    /oms/return/get is a separate access resource, so a site can be entitled
+    to returns without being entitled to this. Sets the type either way, since
+    that is known from the caller without an API call.
+    """
+    credit_note.set(RETURN_TYPE_FIELD, return_type)
+
+    if not facility_code or not (shipment_code or reverse_pickup_code):
+        return
+    try:
+        detail = get_return(client, facility_code, shipment_code=shipment_code,
+                            reverse_pickup_code=reverse_pickup_code)
+    except Exception:
+        return
+    if not detail:
+        return
+
+    reason, courier, pincode = _parse_return_detail(detail)
     if reason:
         credit_note.set(RETURN_REASON_FIELD, reason)
     if courier:
         credit_note.set(RETURN_COURIER_FIELD, courier)
-    if pickup.get("pincode"):
-        credit_note.set(RETURN_PINCODE_FIELD, pickup["pincode"])
+    if pincode:
+        credit_note.set(RETURN_PINCODE_FIELD, pincode)
 
 
 def fully_cancel_orders(unicommerce_order_codes: list[str]) -> None:
@@ -186,6 +235,12 @@ def create_rto_return(package_info, client):
 
     already_returned = frappe.db.get_value("Sales Invoice", {SHIPPING_PACKAGE_CODE_FIELD: package_code, "is_return": 1})
     if already_returned:
+        # The credit note exists, but it predates the return-detail fields (or
+        # was created on a run where the detail fetch came back empty). Fill it
+        # in here rather than leaving it blank forever: this sweep already
+        # revisits every package in a return state, so history heals itself on
+        # the normal schedule instead of needing a one-off backfill.
+        _ensure_return_details(already_returned, client, package_code=package_code, return_type="RTO")
         return
 
     so_data = get_sales_order(client, invoice.get(ORDER_CODE_FIELD))
@@ -251,8 +306,19 @@ def check_and_update_customer_initiated_returns(orders, client) -> None:
 def sync_customer_initiated_returns(so_data, client=None):
     customer_returns = [r for r in so_data.get("returns", []) if r["type"] == "Customer Returned"]
     for customer_return in customer_returns:
-        if not frappe.db.exists("Sales Invoice", {RETURN_CODE_FIELD: customer_return["code"]}):
+        existing = frappe.db.get_value("Sales Invoice", {RETURN_CODE_FIELD: customer_return["code"]})
+        if not existing:
             create_cir_credit_note(so_data, customer_return, client=client)
+        elif client:
+            # Same self-heal as the RTO path: a credit note created before the
+            # return-detail fields existed is filled in on this sweep rather
+            # than staying blank for good.
+            _ensure_return_details(
+                existing, client,
+                package_code=customer_return.get("code"),
+                reverse_pickup_code=customer_return.get("reversePickupCode"),
+                return_type="CUSTOMER_RETURN",
+            )
 
 
 def create_cir_credit_note(so_data, return_data, client=None):

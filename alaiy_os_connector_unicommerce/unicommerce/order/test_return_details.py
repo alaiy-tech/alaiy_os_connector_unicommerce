@@ -113,7 +113,20 @@ def demo():
         {"type": "BILLING", "pincode": "111111"}, {"type": "SHIPPING", "pincode": "222222"}]})
     assert pin == "222222", f"SHIPPING must beat BILLING, got {pin}"
 
-    print("OK: reason/courier precedence incl. live-RTO fallbacks, address tiers, empty payloads, dict-or-list")
+    # The self-heal decides whether to touch an existing credit note at all.
+    # Only a note missing BOTH type and reason is worth an API call; one
+    # already carrying both must be left alone, or every scheduled sweep would
+    # re-fetch every return forever.
+    def needs_heal(existing_type, existing_reason):
+        return not (existing_type and existing_reason)
+
+    assert needs_heal(None, None), "a blank note must heal"
+    assert needs_heal("RTO", None), "type without reason must still heal"
+    assert needs_heal(None, "Damaged"), "reason without type must still heal"
+    assert not needs_heal("RTO", "Damaged"), "a complete note must NOT be re-fetched"
+
+    print("OK: reason/courier precedence incl. live-RTO fallbacks, address tiers, "
+          "empty payloads, dict-or-list, self-heal gating")
 
 
 if __name__ == "__main__":
