@@ -32,6 +32,10 @@ RETURN_TYPE_FIELD = "unicommerce_return_type"
 RETURN_REASON_FIELD = "unicommerce_return_reason"
 RETURN_PINCODE_FIELD = "unicommerce_return_pincode"
 RETURN_COURIER_FIELD = "unicommerce_return_courier"
+# Per-SKU, on the invoice ITEM row: a return can carry several SKUs with
+# different reasons, and the document-level field can only hold one.
+ITEM_RETURN_REASON_FIELD = "unicommerce_item_return_reason"
+ITEM_RETURN_QC_FIELD = "unicommerce_item_qc_comment"
 TRACKING_CODE_FIELD = "unicommerce_tracking_code"
 SHIPPING_PROVIDER_CODE = "unicommerce_shipping_provider"
 MANIFEST_GENERATED_CHECK = "unicommerce_manifest_generated"

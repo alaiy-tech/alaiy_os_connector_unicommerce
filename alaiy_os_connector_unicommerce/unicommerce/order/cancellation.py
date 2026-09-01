@@ -12,9 +12,11 @@ from erpnext.controllers.accounts_controller import update_child_qty_rate
 
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_return, get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    CHANNEL_ID_FIELD, FACILITY_CODE_FIELD, ORDER_CODE_FIELD, ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD,
+    CHANNEL_ID_FIELD, FACILITY_CODE_FIELD, ITEM_EXTERNAL_ID_FIELD, ORDER_CODE_FIELD,
+    ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD,
     RETURN_CODE_FIELD, RETURN_COURIER_FIELD, RETURN_PINCODE_FIELD, RETURN_REASON_FIELD,
-    RETURN_TYPE_FIELD, SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
+    RETURN_TYPE_FIELD, ITEM_RETURN_REASON_FIELD, ITEM_RETURN_QC_FIELD,
+    SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
 )
 
 
@@ -60,6 +62,44 @@ def _ensure_return_details(invoice_name, client, package_code=None, reverse_pick
 
     if values:
         frappe.db.set_value("Sales Invoice", invoice_name, values, update_modified=False)
+
+
+def _return_reason_by_sku(detail):
+    """{skuCode: (reason, qc_comment)} from an /oms/return/get payload.
+
+    returnSaleOrderItems is a LIST, one entry per returned SKU, and a customer
+    returning three items can give a different reason for each. The
+    document-level field on the credit note can only hold one of them, so the
+    rest are kept here against their own invoice item rows.
+    """
+    items = detail.get("returnSaleOrderItems") or []
+    if isinstance(items, dict):
+        items = [items]
+    by_sku = {}
+    for item in items:
+        sku = (item.get("skuCode") or "").strip()
+        if not sku:
+            continue
+        reason = (item.get("marketplaceReturnReason") or item.get("returnRemarks")
+                  or item.get("trackingStatus") or item.get("courierStatus"))
+        by_sku[sku] = (reason, item.get("putawayQcComment"))
+    return by_sku
+
+
+def _apply_item_return_reasons(credit_note, detail):
+    """Stamp each returned SKU's own reason onto its invoice item row."""
+    by_sku = _return_reason_by_sku(detail)
+    if not by_sku:
+        return
+    for row in (credit_note.items or []):
+        # The Unicommerce SKU is the Item's external id, not necessarily the
+        # ERPNext item_code -- match on whichever the payload used.
+        external = frappe.db.get_value("Item", row.item_code, ITEM_EXTERNAL_ID_FIELD)
+        reason, qc = by_sku.get(external) or by_sku.get(row.item_code) or (None, None)
+        if reason:
+            row.set(ITEM_RETURN_REASON_FIELD, reason)
+        if qc:
+            row.set(ITEM_RETURN_QC_FIELD, qc)
 
 
 def _parse_return_detail(detail):
@@ -129,6 +169,8 @@ def apply_return_details(credit_note, client, facility_code, return_type,
         return
     if not detail:
         return
+
+    _apply_item_return_reasons(credit_note, detail)
 
     reason, courier, pincode = _parse_return_detail(detail)
     if reason:

@@ -170,7 +170,7 @@ def setup_custom_fields():
     from alaiy_os_connector_unicommerce.unicommerce.constants import (
         ADDRESS_JSON_FIELD, CHANNEL_ID_FIELD, CUSTOMER_CODE_FIELD, CUSTOMER_SHIPPING_CHARGE_FIELD,
         FACILITY_CODE_FIELD, GRN_CODE_FIELD, GRN_RAW_JSON_FIELD, GRN_SYNCED_AT_FIELD,
-        ITEM_SHIPPING_CHARGE_FIELD,
+        ITEM_SHIPPING_CHARGE_FIELD, ITEM_RETURN_REASON_FIELD, ITEM_RETURN_QC_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
         ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
         ORDER_ITEM_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
@@ -390,6 +390,15 @@ def setup_custom_fields():
         "Sales Invoice Item": [
             dict(fieldname=ITEM_SHIPPING_CHARGE_FIELD, label="Unicommerce Shipping Charge", fieldtype="Currency",
                  insert_after="item_code", read_only=1),
+            # Per-SKU return detail. The document-level reason on Sales Invoice
+            # can only hold one value, but /oms/return/get returns
+            # returnSaleOrderItems as a LIST -- a customer returning three
+            # items can give a different reason for each. Storing only the
+            # first silently loses the rest.
+            dict(fieldname=ITEM_RETURN_REASON_FIELD, label="Unicommerce Return Reason",
+                 fieldtype="Small Text", insert_after=ITEM_SHIPPING_CHARGE_FIELD, read_only=1),
+            dict(fieldname=ITEM_RETURN_QC_FIELD, label="Unicommerce Putaway QC Comment",
+                 fieldtype="Small Text", insert_after=ITEM_RETURN_REASON_FIELD, read_only=1),
         ],
         "Delivery Note": [
             dict(fieldname=ORDER_CODE_FIELD, label="Unicommerce Order No", fieldtype="Data",
