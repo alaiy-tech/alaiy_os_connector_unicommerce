@@ -6,6 +6,9 @@ import frappe
 from frappe import _
 from frappe.utils import date_diff, getdate
 
+from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
+    discover_channels, get_configured_channels, report_skipped,
+)
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import _utc_timeformat
 from alaiy_os_connector_unicommerce.unicommerce.constants import ORDER_CODE_FIELD, SETTINGS_DOCTYPE
@@ -86,12 +89,15 @@ def _run_sync(settings, from_date, to_date, client=None):
     frappe.set_user("Administrator")  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser
     completed_mode = bool(settings.only_sync_completed_orders)
     status = "COMPLETE" if completed_mode else None
-    enabled_channels = set(frappe.get_all("Unicommerce Channel", filters={"enabled": 1}, pluck="channel_id", limit=0))
+    enabled_channels = get_configured_channels()
 
     summary = {
         "range": f"{from_date} -> {to_date}", "total_reported": None, "fetched": 0, "created": 0,
         "skipped_existing": 0, "off_channel": 0, "failed": 0, "incomplete": False,
     }
+    # Which channels the off_channel orders belonged to. A bare count says
+    # orders were dropped; this says which marketplace to go enable.
+    off_channel_detail: dict[str, int] = {}
 
     for page in _fetch_orders_in_range(client, from_date, to_date, status, summary):
         existing = set(
@@ -100,12 +106,19 @@ def _run_sync(settings, from_date, to_date, client=None):
             )
         )
 
+        # Record any channel this page mentions that we hold no record for.
+        # Created disabled, so this page's orders are still skipped below --
+        # the point is that the channel stops being invisible.
+        discover_channels({o.get("channel") for o in page})
+
         for order_summary in page:
             code = order_summary["code"]
             summary["fetched"] += 1
 
             if order_summary.get("channel") not in enabled_channels:
                 summary["off_channel"] += 1
+                ch = order_summary.get("channel")
+                off_channel_detail[ch] = off_channel_detail.get(ch, 0) + 1
                 continue
 
             existing_so = code in existing
@@ -135,6 +148,8 @@ def _run_sync(settings, from_date, to_date, client=None):
                 summary["failed"] += 1
                 frappe.log_error(title=f"Unicommerce: old-order sync failed for {code}", message=frappe.get_traceback())
 
+    report_skipped(off_channel_detail)
+    summary["off_channel_detail"] = off_channel_detail
     _log_summary(summary)
     return summary
 

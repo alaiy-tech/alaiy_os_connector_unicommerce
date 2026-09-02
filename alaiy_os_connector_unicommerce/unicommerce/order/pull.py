@@ -18,6 +18,9 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD,
     ORDER_STATUS_FIELD, SETTINGS_DOCTYPE, TAX_FIELDS_MAPPING, TAX_RATE_FIELDS_MAPPING,
 )
+from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
+    discover_channels, get_configured_channels, report_skipped,
+)
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
@@ -57,9 +60,14 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
     if uni_orders is None:
         return
 
-    configured_channels = {
-        c.channel_id for c in frappe.get_all("Unicommerce Channel", filters={"enabled": 1}, fields="channel_id")
-    }
+    configured_channels = get_configured_channels()
+
+    # Create a DISABLED record for any channel live in Unicommerce that we
+    # hold no record for. Imports nothing by itself -- the filter below still
+    # skips a disabled channel -- but makes it visible instead of silently
+    # dropping its orders forever. See channel_discovery for the full why.
+    discover_channels({o.get("channel") for o in uni_orders})
+
     # A fresh site has no Unicommerce Channel records at all, and nothing
     # creates them automatically -- without this the loop below silently
     # drops every order as "unconfigured channel" and the sync reports
@@ -75,8 +83,14 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
         )
         return
 
+    # Count what gets dropped rather than skipping in silence. A channel that
+    # exists but is disabled creates nothing above, so this is the only trace
+    # its orders leave.
+    skipped: dict[str, int] = {}
+
     for order in uni_orders:
         if order["channel"] not in configured_channels:
+            skipped[order["channel"]] = skipped.get(order["channel"], 0) + 1
             continue
         # Re-fetch the full order (search results are summaries) -- if a
         # sales invoice failed to generate for some reason and got skipped,
@@ -84,6 +98,11 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
         full_order = get_sales_order(client, order_code=order["code"])
         if full_order:
             yield full_order
+
+    # After the loop, so the counts are complete. A generator that is never
+    # fully drained will not reach this -- acceptable, since every caller
+    # iterates it to exhaustion and a partial count is worse than none.
+    report_skipped(skipped)
 
 
 def _create_sales_invoices(unicommerce_order: dict, sales_order, client: UnicommerceClient):
