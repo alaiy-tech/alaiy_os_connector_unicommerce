@@ -1,0 +1,18 @@
+# Security scan on every push and PR.
+#
+# Calls the canonical reusable workflow in frapsec's own repo, so rule changes
+# land here without editing this file. The job fails on critical/high findings
+# only -- medium and below are reported to the Security tab via SARIF but do
+# not block a merge.
+name: frapsec
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # lets the scan be run by hand from the Actions tab
+
+jobs:
+  scan:
+    uses: alaiy-tech/frapsec/.github/workflows/frapsec.yml@main
+    with:
+      app_path: .
