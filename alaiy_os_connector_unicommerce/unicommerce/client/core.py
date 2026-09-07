@@ -19,6 +19,14 @@ from frappe.utils import cstr
 
 JsonDict = dict[str, Any]
 
+# (connect, read). Without one, requests waits forever: a connection that is
+# accepted and then never answered blocks the calling process indefinitely.
+# Confirmed live -- a backfill walking thousands of orders stopped dead on a
+# single hung call, with no error, no traceback and no way to tell it apart
+# from slow progress. The read budget is generous because some Unicommerce
+# searches genuinely take tens of seconds; the point is that it ends.
+REQUEST_TIMEOUT = (10, 120)
+
 
 class UnicommerceClient:
     def __init__(self, url: str | None = None, access_token: str | None = None):
@@ -70,7 +78,8 @@ class UnicommerceClient:
 
         try:
             response = requests.request(
-                url=url, method=method, headers=headers, json=body, params=params, files=files
+                url=url, method=method, headers=headers, json=body, params=params,
+                files=files, timeout=REQUEST_TIMEOUT,
             )
             # Token expired mid-run -> refresh once and retry the call.
             # File uploads are NOT retried: `requests` has already streamed
@@ -82,7 +91,8 @@ class UnicommerceClient:
                 self._refresh_auth()
                 headers.update(self._auth_headers)
                 response = requests.request(
-                    url=url, method=method, headers=headers, json=body, params=params, files=files
+                    url=url, method=method, headers=headers, json=body, params=params,
+                    files=files, timeout=REQUEST_TIMEOUT,
                 )
             # Unicommerce puts useful detail in response text -- surface it in error logs.
             response.reason = cstr(response.reason) + cstr(response.text)

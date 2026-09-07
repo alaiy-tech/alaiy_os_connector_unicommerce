@@ -157,7 +157,8 @@ class UnicommerceConnectorSettings(Document):
         elif grant_type == "refresh_token":
             params.update({"refresh_token": self.get_password("refresh_token")})
 
-        res = requests.get(url, params=params)
+        # See client/core.py: an untimed call blocks the caller forever.
+        res = requests.get(url, params=params, timeout=(10, 60))
         if res.status_code == 200:
             data = res.json()
             self.access_token = data["access_token"]

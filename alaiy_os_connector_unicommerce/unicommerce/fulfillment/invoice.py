@@ -475,7 +475,8 @@ def fetch_label_pdf(package, invoicing_response, client, facility_code):
 
 def fetch_pdf_as_base64(link):
     try:
-        response = requests.get(link)
+        # See client/core.py: an untimed call blocks the caller forever.
+        response = requests.get(link, timeout=(10, 60))
         response.raise_for_status()
         return base64.b64encode(response.content)
     except Exception:
