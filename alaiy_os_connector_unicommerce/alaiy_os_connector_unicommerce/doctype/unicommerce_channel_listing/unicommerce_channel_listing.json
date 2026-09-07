@@ -1,0 +1,128 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:{channel}-{channel_product_id}",
+ "creation": "2026-09-07 18:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "channel",
+  "channel_product_id",
+  "column_break_1",
+  "item_code",
+  "seller_sku_code",
+  "sb_source",
+  "unicommerce_sku",
+  "first_seen_on",
+  "column_break_2",
+  "last_seen_on",
+  "seen_count"
+ ],
+ "fields": [
+  {
+   "fieldname": "channel",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Channel",
+   "options": "Unicommerce Channel",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The marketplace's own id for this listing -- Flipkart calls it the FSN. Several can point at one Item: a marketplace mints a new one per listing, so variants and relistings of one product each carry their own.",
+   "fieldname": "channel_product_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Channel Product ID",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Item this listing resolves to. Blank means the SKU on the order has no Item here yet -- the mapping is still recorded, so it resolves on its own once the product is imported.",
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The seller's own code for the listing, as the marketplace holds it. Often equals the SKU but not always, which is why both are kept.",
+   "fieldname": "seller_sku_code",
+   "fieldtype": "Data",
+   "label": "Seller SKU Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_source",
+   "fieldtype": "Section Break",
+   "label": "Source"
+  },
+  {
+   "description": "Unicommerce's own SKU from the order line. Kept alongside the Item so a mapping stays readable even if the Item is later renamed or removed.",
+   "fieldname": "unicommerce_sku",
+   "fieldtype": "Data",
+   "label": "Unicommerce SKU",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "first_seen_on",
+   "fieldtype": "Datetime",
+   "label": "First Seen On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Updated every time an order carries this listing, so a stale mapping is distinguishable from a live one.",
+   "fieldname": "last_seen_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Seen On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seen_count",
+   "fieldtype": "Int",
+   "label": "Orders Seen",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alaiy OS Connector Unicommerce",
+ "name": "Unicommerce Channel Listing",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

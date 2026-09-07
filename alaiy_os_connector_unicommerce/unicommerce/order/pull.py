@@ -22,6 +22,7 @@ from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
     discover_channels, get_configured_channels, report_skipped,
 )
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
+from alaiy_os_connector_unicommerce.unicommerce.channel_listing import fill_from_order
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
     ensure_multiple_items_allowed, get_dummy_tax_category, get_unicommerce_date, need_to_run,
@@ -217,6 +218,14 @@ def _sync_order_items(order: UnicommerceOrder, client: UnicommerceClient) -> set
     for sku in items:
         if not frappe.db.exists("Item", {ITEM_EXTERNAL_ID_FIELD: sku}):
             import_product_from_unicommerce(sku=sku, client=client)
+
+    # Record which marketplace listing each line was sold under. The pair --
+    # channelProductId (Flipkart's FSN) and itemSku -- is already on every
+    # line and was being discarded; nothing else can derive one from the
+    # other, and procurement needs it to read a Flipkart PO at all. Recorded
+    # after the import above so the Item is there to link to.
+    fill_from_order(order)
+
     return items
 
 
