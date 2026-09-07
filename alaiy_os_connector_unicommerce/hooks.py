@@ -56,6 +56,14 @@ scheduler_events = {
             "alaiy_os_connector_unicommerce.unicommerce.inventory.pull.pull_inventory_from_unicommerce",
         ],
     },
+    "daily_long": [
+        # Reads marketplace listing ids off orders that predate the mapping.
+        # Self-limiting and resumable: it takes a fixed batch of the oldest
+        # unread orders and stops, so it clears history over a couple of
+        # weeks without competing with the order sync for API quota, then
+        # finds nothing and costs one query a day.
+        "alaiy_os_connector_unicommerce.unicommerce.channel_listing.catch_up_on_unmapped_orders",
+    ],
     "hourly_long": [
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_sales_order_status",
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_shipping_package_status",

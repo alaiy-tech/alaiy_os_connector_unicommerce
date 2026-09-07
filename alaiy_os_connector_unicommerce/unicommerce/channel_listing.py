@@ -46,6 +46,10 @@ CHANNEL_PRODUCT_ID = "channelProductId"
 SELLER_SKU_CODE = "sellerSkuCode"
 ITEM_SKU = "itemSku"
 
+# Set on a Sales Order once its listings have been read, so the daily
+# catch-up resumes rather than restarting and eventually goes quiet.
+LISTINGS_CHECKED_FIELD = "unicommerce_listings_checked"
+
 
 def _listing_name(channel: str, channel_product_id: str) -> str:
 	"""Mirrors the doctype's autoname so a row can be found without a query
@@ -171,6 +175,96 @@ def get_mapping(channel_product_id: str, channel: str | None = None) -> dict:
 	return row or {}
 
 
+# How many historical orders one scheduled catch-up pass will refetch. Each
+# is its own API call, so this is a rate-limit budget, not a performance
+# knob: 200/day clears a few thousand unmapped orders within a fortnight
+# without ever competing with the order sync for quota.
+_CATCHUP_BATCH = 200
+
+
+def catch_up_on_unmapped_orders() -> dict:
+	"""Daily pass over orders that predate this mapping.
+
+	Every order pulled from now on records its listings as it arrives, so
+	this exists only for history -- orders already in the database when the
+	feature landed, which never had their channelProductId read.
+
+	Self-limiting rather than one long job: it takes a fixed batch of the
+	oldest unseen orders each day and stops. Once history is exhausted it
+	finds nothing and costs one query, so it can be left scheduled forever
+	rather than being a one-off someone has to remember to run and a
+	deployment that quietly misses it.
+
+	Tracks progress on the Sales Order itself, so an interrupted run resumes
+	where it stopped instead of starting over.
+	"""
+	from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
+	from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
+	from alaiy_os_connector_unicommerce.unicommerce.constants import ORDER_CODE_FIELD
+
+	if not frappe.db.has_column("Sales Order", LISTINGS_CHECKED_FIELD):
+		# The field arrives with the patch; until then there is nothing to
+		# track progress on and a pass would refetch the same orders daily.
+		return {"skipped": "listings-checked field not present yet"}
+
+	codes = frappe.get_all(
+		"Sales Order",
+		filters={
+			ORDER_CODE_FIELD: ["is", "set"],
+			LISTINGS_CHECKED_FIELD: 0,
+		},
+		pluck=ORDER_CODE_FIELD,
+		limit=_CATCHUP_BATCH,
+		order_by="creation asc",
+	)
+	codes = [c for c in dict.fromkeys(codes) if c]
+	if not codes:
+		return {"orders": 0, "listings_recorded": 0, "remaining": 0}
+
+	client = UnicommerceClient()
+	recorded = failed = 0
+	for code in codes:
+		try:
+			order = get_sales_order(client, code)
+			if order:
+				recorded += fill_from_order(order)
+			# Marked either way. An order whose channel supplies no
+			# channelProductId has nothing to record and must not be
+			# refetched every day forever.
+			_mark_checked(code)
+		except Exception:
+			failed += 1
+			frappe.log_error(
+				title=f"Unicommerce listing catch-up failed for {code}",
+				message=frappe.get_traceback(),
+			)
+	frappe.db.commit()
+
+	remaining = frappe.db.count("Sales Order", {
+		ORDER_CODE_FIELD: ["is", "set"], LISTINGS_CHECKED_FIELD: 0,
+	})
+	return {
+		"orders": len(codes), "listings_recorded": recorded,
+		"failed": failed, "remaining": remaining,
+	}
+
+
+def _mark_checked(order_code: str) -> None:
+	"""Record that this order's listings have been read.
+
+	db.sql rather than set_value: these are submitted documents and this is
+	bookkeeping, not a change anyone should see in the document's own
+	modified timestamp or version history.
+	"""
+	from alaiy_os_connector_unicommerce.unicommerce.constants import ORDER_CODE_FIELD
+
+	frappe.db.sql(
+		f"UPDATE `tabSales Order` SET `{LISTINGS_CHECKED_FIELD}` = 1 "
+		f"WHERE `{ORDER_CODE_FIELD}` = %s",
+		order_code,
+	)
+
+
 def backfill_from_existing_orders(limit: int = None) -> dict:
 	"""Recover mappings from orders already pulled, by re-reading them from
 	Unicommerce.
@@ -207,6 +301,8 @@ def backfill_from_existing_orders(limit: int = None) -> dict:
 			order = get_sales_order(client, code)
 			if order:
 				recorded += fill_from_order(order)
+			if frappe.db.has_column("Sales Order", LISTINGS_CHECKED_FIELD):
+				_mark_checked(code)
 		except Exception:
 			failed += 1
 			frappe.log_error(

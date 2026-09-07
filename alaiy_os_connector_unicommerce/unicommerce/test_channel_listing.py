@@ -169,6 +169,76 @@ def test_whitespace_is_stripped_from_the_key():
     assert name == "FLIPKART_GLOBALI-FSN_PADDED"
 
 
+# --- the daily catch-up's own logic, without frappe -------------------------
+#
+# What matters is that it resumes, terminates, and never refetches an order
+# twice: a pass that restarted from the top would refetch the same 200
+# orders every day and never reach the rest, which is exactly the
+# misconfiguration this is meant to be immune to.
+
+_CATCHUP_BATCH = 200
+
+
+def _catch_up_pass(orders, batch=_CATCHUP_BATCH):
+    """One pass: take the oldest unchecked orders, mark them, return counts.
+
+    `orders` is [{"code", "checked", "lines"}], oldest first -- mirroring
+    the query's order_by="creation asc" and its unchecked filter.
+    """
+    todo = [o for o in orders if not o["checked"]][:batch]
+    recorded = 0
+    for order in todo:
+        recorded += len([l for l in order["lines"] if l.get(CHANNEL_PRODUCT_ID)])
+        order["checked"] = True          # marked either way
+    remaining = len([o for o in orders if not o["checked"]])
+    return {"orders": len(todo), "listings_recorded": recorded, "remaining": remaining}
+
+
+def _orders(n, with_listing=True):
+    return [
+        {"code": f"SO-{i}", "checked": False,
+         "lines": [_line(f"FSN{i}", f"SKU{i}")] if with_listing else [{ITEM_SKU: f"SKU{i}"}]}
+        for i in range(n)
+    ]
+
+
+def test_catch_up_resumes_rather_than_restarting():
+    orders = _orders(500)
+    first = _catch_up_pass(orders)
+    assert first["orders"] == 200 and first["remaining"] == 300, first
+    second = _catch_up_pass(orders)
+    assert second["orders"] == 200 and second["remaining"] == 100, second
+    third = _catch_up_pass(orders)
+    assert third["orders"] == 100 and third["remaining"] == 0, third
+
+
+def test_catch_up_goes_quiet_once_history_is_done():
+    """Left scheduled forever, so it has to cost nothing when finished."""
+    orders = _orders(10)
+    _catch_up_pass(orders)
+    idle = _catch_up_pass(orders)
+    assert idle == {"orders": 0, "listings_recorded": 0, "remaining": 0}, idle
+
+
+def test_orders_without_listing_ids_are_still_marked():
+    """A channel that supplies no channelProductId has nothing to record --
+    but leaving those unmarked would refetch them daily forever."""
+    orders = _orders(5, with_listing=False)
+    first = _catch_up_pass(orders)
+    assert first["listings_recorded"] == 0, first
+    assert first["remaining"] == 0, "unmapped orders must not be retried forever"
+    assert _catch_up_pass(orders)["orders"] == 0
+
+
+def test_catch_up_never_reads_one_order_twice():
+    orders = _orders(300)
+    seen = []
+    for _ in range(3):
+        seen += [o["code"] for o in orders if not o["checked"]][:_CATCHUP_BATCH]
+        _catch_up_pass(orders)
+    assert len(seen) == len(set(seen)) == 300, (len(seen), len(set(seen)))
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):
