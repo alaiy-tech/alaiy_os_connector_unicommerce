@@ -29,8 +29,12 @@ is absent, which matters because that is exactly the case procurement needs
 before the first PO arrives. Unicommerce has a write endpoint for channel
 item types (/services/rest/v1/channel/createChannelItemType) but publishes
 no read or search counterpart, so there is no supported way to pull the
-full table -- see the module's own note in fill_from_order for what would
-change if one appears.
+full table -- see the note in fill_from_order for what would change if one
+appears.
+
+History is cleared by catch_up_on_unmapped_orders, scheduled daily. To do
+the same work now rather than over weeks, there is an operator script with
+live progress: scripts/backfill_channel_listings.py.
 
 Cardinality is many-to-one on purpose: a marketplace mints an id per
 listing, so one product carries several across variants and relistings.
@@ -269,54 +273,3 @@ def _mark_checked(order_code: str) -> None:
 		f"WHERE `{ORDER_CODE_FIELD}` = %s",
 		order_code,
 	)
-
-
-def backfill_from_existing_orders(limit: int = None) -> dict:
-	"""Recover mappings from orders already pulled, by re-reading them from
-	Unicommerce.
-
-	The pair is only on the API payload -- the local Sales Order keeps the
-	SKU and not the listing id -- so this refetches each order rather than
-	reading the database. That makes it slow and rate-limited, which is why
-	it is a one-off rather than a schedule: from here on the order pull
-	records mappings as they arrive.
-
-	Worth running once after deploy so the listings already sold are known
-	without waiting for each to sell again.
-
-	    bench --site <site> execute \
-	      alaiy_os_connector_unicommerce.unicommerce.channel_listing.backfill_from_existing_orders
-	"""
-	from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
-	from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
-	from alaiy_os_connector_unicommerce.unicommerce.constants import ORDER_CODE_FIELD
-
-	codes = frappe.get_all(
-		"Sales Order",
-		filters={ORDER_CODE_FIELD: ["is", "set"]},
-		pluck=ORDER_CODE_FIELD,
-		limit=limit or 0,
-		order_by="creation desc",
-	)
-	codes = [c for c in dict.fromkeys(codes) if c]
-
-	client = UnicommerceClient()
-	recorded = failed = 0
-	for code in codes:
-		try:
-			order = get_sales_order(client, code)
-			if order:
-				recorded += fill_from_order(order)
-			if frappe.db.has_column("Sales Order", LISTINGS_CHECKED_FIELD):
-				_mark_checked(code)
-			# Per order -- see catch_up_on_unmapped_orders. Also means an
-			# interrupted run keeps everything it had already read.
-			frappe.db.commit()
-		except Exception:
-			failed += 1
-			frappe.log_error(
-				title=f"Unicommerce listing backfill failed for {code}",
-				message=frappe.get_traceback(),
-			)
-	frappe.db.commit()
-	return {"orders": len(codes), "listings_recorded": recorded, "failed": failed}
