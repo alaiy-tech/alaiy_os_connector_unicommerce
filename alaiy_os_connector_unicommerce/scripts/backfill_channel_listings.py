@@ -132,15 +132,18 @@ def run(limit=None, every=25, channel=None):
 	print(f"  {remaining:,} orders still unread"
 	      + ("" if not remaining else " -- the daily job will clear these"))
 
+	# Rows as tuples, not dicts. A column aliased `items` on a Frappe _dict
+	# resolves to dict.items -- the method -- so formatting it raises
+	# instead of printing a number, and it does so only at the very end of
+	# a run, after all the work is done.
 	by_channel = frappe.db.sql(
-		"""SELECT channel, COUNT(*) listings, COUNT(DISTINCT item_code) items
-		   FROM `tabUnicommerce Channel Listing` GROUP BY 1 ORDER BY 2 DESC""",
-		as_dict=True,
+		"""SELECT channel, COUNT(*), COUNT(DISTINCT item_code)
+		   FROM `tabUnicommerce Channel Listing` GROUP BY 1 ORDER BY 2 DESC"""
 	)
 	if by_channel:
 		print("\n  channel                          listings   items")
-		for row in by_channel:
-			print(f"  {row.channel:<32} {row.listings:>8,} {row.items:>7,}")
+		for name, listings, items in by_channel:
+			print(f"  {name:<32} {listings:>8,} {items:>7,}")
 	print()
 
 	return {
