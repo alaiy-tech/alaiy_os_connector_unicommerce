@@ -232,6 +232,12 @@ def catch_up_on_unmapped_orders() -> dict:
 			# channelProductId has nothing to record and must not be
 			# refetched every day forever.
 			_mark_checked(code)
+			# Per order, not once at the end. One transaction held open
+			# across a long run keeps a metadata lock on tabSales Order, so
+			# any ALTER waits behind it and eventually fails -- confirmed
+			# live: a run over 14,560 orders stalled a migrate on Globali,
+			# and killing it lost every mapping it had written.
+			frappe.db.commit()
 		except Exception:
 			failed += 1
 			frappe.log_error(
@@ -303,6 +309,9 @@ def backfill_from_existing_orders(limit: int = None) -> dict:
 				recorded += fill_from_order(order)
 			if frappe.db.has_column("Sales Order", LISTINGS_CHECKED_FIELD):
 				_mark_checked(code)
+			# Per order -- see catch_up_on_unmapped_orders. Also means an
+			# interrupted run keeps everything it had already read.
+			frappe.db.commit()
 		except Exception:
 			failed += 1
 			frappe.log_error(
