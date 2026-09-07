@@ -15,8 +15,8 @@ Options, passed as kwargs:
     --kwargs "{'every': 10}"        print a line every 10 orders (default 25)
     --kwargs "{'channel': 'FLIPKART_GLOBALI'}"    one channel only
 
-Why it lives here and not in the connector: it is an operator tool, not
-part of any sync path. Nothing imports it, nothing schedules it, and it can
+Why it lives in scripts/ and not beside the sync modules: it is an
+operator tool, not part of any sync path. Nothing imports it, nothing schedules it, and it can
 be interrupted at any point -- each order is committed as it is read, so a
 Ctrl-C keeps everything already done and the daily job picks up the rest.
 
