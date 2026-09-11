@@ -8,7 +8,7 @@ from typing import Any, NewType
 
 import frappe
 from frappe.query_builder.functions import Coalesce
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order, search_sales_order
@@ -52,6 +52,16 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
         sales_order = create_order(order, client=client)
         if sales_order:
             _create_sales_invoices(order, sales_order, client)
+
+    # Stamped here as well as inside need_to_run, because the scheduled path
+    # never reaches that one: sync.run_pull_sync calls this with force=True so
+    # the Sync Log owns the interval instead. Without this, the field sits at
+    # its zero value forever while orders demonstrably arrive -- which reads
+    # as "this sync has never run" to anyone checking why data looks stale,
+    # and sent a live investigation down the wrong path for an afternoon.
+    frappe.db.set_value(
+        SETTINGS_DOCTYPE, None, "last_order_sync", now_datetime(), update_modified=False
+    )
 
 
 def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[UnicommerceOrder] | None:
