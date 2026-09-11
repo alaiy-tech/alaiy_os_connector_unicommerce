@@ -96,3 +96,12 @@ def run_grn_sync(trigger="scheduled", log_name=None):
         sync_grn_receipts()
 
     _run("grn", trigger, log_name, worker)
+
+
+def run_b2b_sync(trigger="scheduled", log_name=None):
+    """Pull B2B sale orders, which the ordinary order search cannot see."""
+    def worker(log):
+        from alaiy_os_connector_unicommerce.unicommerce.order.b2b_pull import sync_b2b_orders
+        sync_b2b_orders()
+
+    _run("b2b", trigger, log_name, worker)
