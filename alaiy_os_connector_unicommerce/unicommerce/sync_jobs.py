@@ -47,6 +47,18 @@ def check_and_enqueue():
             enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
         )
 
+    # B2B rides order_sync_frequency: it is order demand, wanted at the same
+    # freshness as any other order. Its own sync_type keeps a slow export job
+    # -- create, poll, download -- from blocking the retail pull, which has to
+    # stay quick.
+    if settings.get("sync_b2b_orders"):
+        _maybe_enqueue(
+            interval_setting=settings.order_sync_frequency,
+            interval_fieldname="order_sync_frequency",
+            sync_type="b2b",
+            enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_b2b_sync",
+        )
+
     if settings.sync_purchase_orders:
         _maybe_enqueue(
             interval_setting=settings.po_sync_frequency,

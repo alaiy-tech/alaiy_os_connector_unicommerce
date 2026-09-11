@@ -46,13 +46,15 @@
   "po_sync_frequency",
   "po_sync_start_date",
   "sync_grn_receipts",
+  "sync_b2b_orders",
   "sync_status_section",
   "last_order_sync",
   "column_break_20",
   "last_inventory_sync",
   "last_inventory_pull",
   "last_po_sync",
-  "last_grn_sync"
+  "last_grn_sync",
+  "last_b2b_sync"
  ],
  "fields": [
   {
@@ -342,6 +344,19 @@
    "fieldname": "last_grn_sync",
    "fieldtype": "Datetime",
    "label": "Last GRN Sync",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Pull B2B sale orders (e.g. Flipkart Minutes POs) from Unicommerce. These are invisible to the ordinary order search and are discovered through an export job instead, so they sync on their own schedule.",
+   "fieldname": "sync_b2b_orders",
+   "fieldtype": "Check",
+   "label": "Sync B2B Sale Orders"
+  },
+  {
+   "fieldname": "last_b2b_sync",
+   "fieldtype": "Datetime",
+   "label": "Last B2B Sale Order Sync",
    "read_only": 1
   }
  ],

@@ -306,7 +306,12 @@ def _get_line_items(line_items: list, default_warehouse: str | None = None, is_c
         so_items.append({
             "item_code": item_code,
             "rate": item["sellingPrice"],
-            "qty": 1,
+            # Retail orders carry one saleOrderItem per unit, so 1 was right
+            # and `totalQuantity` is 1 on them. B2B aggregates instead: a
+            # Flipkart Minutes line is a single item at totalQuantity 110,
+            # and hardcoding 1 would have imported 110 units as 1.
+            # `sellingPrice` is per unit in both shapes.
+            "qty": int(item.get("totalQuantity") or 1),
             "stock_uom": "Nos",
             "warehouse": warehouse,
             ORDER_ITEM_CODE_FIELD: item.get("code"),
