@@ -30,6 +30,7 @@ def check_and_enqueue():
 
     _maybe_enqueue(
         interval_setting=settings.order_sync_frequency,
+        interval_fieldname="order_sync_frequency",
         sync_type="pull",
         enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_pull_sync",
     )
@@ -41,6 +42,7 @@ def check_and_enqueue():
     if settings.upload_item_to_unicommerce:
         _maybe_enqueue(
             interval_setting=settings.order_sync_frequency,
+            interval_fieldname="order_sync_frequency",
             sync_type="push",
             enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_push_sync",
         )
@@ -48,6 +50,7 @@ def check_and_enqueue():
     if settings.sync_purchase_orders:
         _maybe_enqueue(
             interval_setting=settings.po_sync_frequency,
+            interval_fieldname="po_sync_frequency",
             sync_type="purchase_order",
             enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_po_sync",
         )
@@ -58,16 +61,35 @@ def check_and_enqueue():
         if settings.sync_grn_receipts:
             _maybe_enqueue(
                 interval_setting=settings.po_sync_frequency,
+                interval_fieldname="po_sync_frequency",
                 sync_type="grn",
                 enqueue_fn="alaiy_os_connector_unicommerce.unicommerce.sync.run_grn_sync",
             )
 
 
-def _maybe_enqueue(interval_setting, sync_type, enqueue_fn):
+def _interval_default(fieldname: str | None) -> str | None:
+    if not fieldname:
+        return None
+    field = frappe.get_meta("Unicommerce Connector Settings").get_field(fieldname)
+    return field.default if field else None
+
+
+def _maybe_enqueue(interval_setting, sync_type, enqueue_fn, interval_fieldname=None):
     try:
         interval_minutes = int(interval_setting)
     except (TypeError, ValueError):
-        return  # unset, "Disabled", or anything non-numeric
+        # A blank interval is an accident, not a way to switch a sync off:
+        # each sync already has its own toggle, and these Selects carry no
+        # "Disabled" option. Field defaults apply only when a document is
+        # created, and this is a Single -- so any frequency field added after
+        # the row existed is empty on every upgraded bench. Returning here
+        # meant a sync whose toggle was plainly ticked never ran and never
+        # said why; on the Globali bench that hid Purchase Order sync
+        # entirely while the setting read as enabled.
+        try:
+            interval_minutes = int(_interval_default(interval_fieldname))
+        except (TypeError, ValueError):
+            return
     if interval_minutes < _MIN_INTERVAL_MINUTES:
         return
 

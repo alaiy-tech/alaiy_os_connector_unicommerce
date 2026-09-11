@@ -24,14 +24,46 @@ def _is_masked(value) -> bool:
     return bool(value) and bool(_MASKED_RE.match(str(value).strip()))
 
 
-def get_or_create_supplier(vendor_code: str, vendor_name: str):
-    if vendor_code:
-        existing = frappe.db.get_value("Supplier", {VENDOR_CODE_FIELD: vendor_code})
-        if existing:
-            return frappe.get_doc("Supplier", existing)
+def _refresh_placeholder_name(name: str, stored: str, vendor_code: str, vendor_name: str | None) -> None:
+    """Replace a stored supplier name that is a masking artefact.
 
+    A supplier first seen while its name was masked keeps that mask forever,
+    because nothing re-reads the name afterwards. On a bench that predates
+    `_is_masked` this leaves suppliers literally called `********` -- which
+    is unreadable in any view grouping purchases by vendor, and vendor is
+    the closest thing a consolidator has to a brand on the supply side.
+
+    Only a placeholder is ever overwritten: a name a human has since
+    corrected is left alone. The vendor code is used when Unicommerce still
+    will not return a real name, because an opaque code still beats a row of
+    asterisks.
+
+    Uses `db.set_value` rather than `doc.save()` deliberately -- on a bench
+    where Supplier is autonamed from `supplier_name`, saving would trigger a
+    document rename from inside a sync loop. Every list and report reads the
+    display field; `name` stays put as the stable key.
+    """
+    if not _is_masked(stored) and stored not in ("", None, "Unicommerce Vendor"):
+        return
+    better = vendor_name or vendor_code
+    if not better or better == stored:
+        return
+    frappe.db.set_value("Supplier", name, "supplier_name", better, update_modified=False)
+
+
+def get_or_create_supplier(vendor_code: str, vendor_name: str):
     if _is_masked(vendor_name):
         vendor_name = None
+
+    if vendor_code:
+        existing = frappe.db.get_value(
+            "Supplier", {VENDOR_CODE_FIELD: vendor_code}, ["name", "supplier_name"], as_dict=True
+        )
+        if existing:
+            _refresh_placeholder_name(
+                existing.name, existing.supplier_name, vendor_code, vendor_name
+            )
+            return frappe.get_doc("Supplier", existing.name)
 
     supplier = frappe.get_doc({
         "doctype": "Supplier",
