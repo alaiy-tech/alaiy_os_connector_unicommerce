@@ -52,8 +52,24 @@ def get_naming_series_options() -> dict:
 
 
 def get_unicommerce_date(timestamp: int) -> datetime.date:
-    """Convert a Unicommerce ms timestamp to a date."""
-    return datetime.date.fromtimestamp(timestamp // 1000)
+    """Convert a Unicommerce ms timestamp to a date in the SITE's timezone.
+
+    `date.fromtimestamp()` resolves in the OS timezone. Production is a UTC
+    host running an Asia/Kolkata site, so every order placed between 00:00
+    and 05:30 IST landed on the PREVIOUS day: one placed 03:00 IST on the
+    21st is 21:30 UTC on the 20th, and that is the date it got. Each day was
+    therefore missing its own early morning while carrying the next day's --
+    a few percent out on every daily total, which is exactly how far our
+    revenue sat from Unicommerce's on a settled day.
+
+    The instant itself is unambiguous (epoch ms); only the calendar day it
+    belongs to needs a timezone, and that is the tenant's, not the host's.
+    """
+    from frappe.utils import get_system_timezone
+    from pytz import timezone
+
+    moment = datetime.datetime.fromtimestamp(timestamp / 1000, tz=datetime.timezone.utc)
+    return moment.astimezone(timezone(get_system_timezone())).date()
 
 
 def remove_non_alphanumeric_chars(filename: str) -> str:
