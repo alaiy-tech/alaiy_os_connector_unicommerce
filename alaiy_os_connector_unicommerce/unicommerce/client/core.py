@@ -15,7 +15,7 @@ from typing import Any
 
 import frappe
 import requests
-from frappe.utils import cstr, get_datetime, now_datetime
+from frappe.utils import cstr
 
 JsonDict = dict[str, Any]
 
@@ -62,7 +62,18 @@ class UnicommerceClient:
         already have refreshed while it waited, in which case it adopts that
         token instead of calling Unicommerce's /oauth/token again with a
         refresh token that's about to be (or already) rotated out.
+
+        The re-check compares the actual STORED TOKEN against the one that
+        just failed -- never `expires_on` alone. `expires_on` is only our own
+        estimate from when the token was issued; Unicommerce can invalidate a
+        token earlier than that estimate (observed live: another system
+        sharing the same API credentials refreshing independently of us
+        invalidates ours with no warning). Trusting expires_on here meant
+        every process kept re-adopting the same already-dead token forever,
+        because our own bookkeeping said it "shouldn't" be expired yet --
+        confirmed live as an hour-long stuck outage across every endpoint.
         """
+        failed_token = self.access_token
         with frappe.cache().lock(_TOKEN_REFRESH_LOCK, timeout=30):
             # Commit first to end this process's existing REPEATABLE READ
             # snapshot -- otherwise load_from_db() below can still return
@@ -73,13 +84,10 @@ class UnicommerceClient:
             # winner's commit and couldn't see it without starting fresh.
             frappe.db.commit()
             self.settings.load_from_db()
-            already_fresh = (
-                self.settings.access_token
-                and self.settings.expires_on
-                and now_datetime() < get_datetime(self.settings.expires_on)
-            )
-            if already_fresh:
-                self.access_token = self.settings.get_password("access_token")
+            stored_token = self.settings.get_password("access_token") if self.settings.access_token else None
+            already_refreshed = stored_token and stored_token != failed_token
+            if already_refreshed:
+                self.access_token = stored_token
             else:
                 self.settings.update_tokens(grant_type="refresh_token")
                 self.access_token = self.settings.access_token
