@@ -15,7 +15,7 @@ from typing import Any
 
 import frappe
 import requests
-from frappe.utils import cstr
+from frappe.utils import cstr, get_datetime, now_datetime
 
 JsonDict = dict[str, Any]
 
@@ -26,6 +26,16 @@ JsonDict = dict[str, Any]
 # from slow progress. The read budget is generous because some Unicommerce
 # searches genuinely take tens of seconds; the point is that it ends.
 REQUEST_TIMEOUT = (10, 120)
+
+#: Serializes actual refresh_token grant calls across concurrent clients.
+#: Without this, two clients hitting a 401 around the same time each refresh
+#: against the SAME (about-to-be-rotated) refresh token -- Unicommerce only
+#: honours the first, so the second's "fresh" token comes back already
+#: invalid. Confirmed live as a cascade of distinct-token 401 "invalid_token"
+#: errors across every endpoint (orders, invoices, POs), not any one channel
+#: -- which is what made order/PO data look randomly, non-deterministically
+#: missing rather than tied to a specific broken integration.
+_TOKEN_REFRESH_LOCK = "unicommerce_token_refresh"
 
 
 class UnicommerceClient:
@@ -44,22 +54,41 @@ class UnicommerceClient:
         self._auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
     def _refresh_auth(self):
-        """Fetch a fresh access token after a 401 and rebuild the auth header."""
-        self.settings.update_tokens(grant_type="refresh_token")
-        self.access_token = self.settings.access_token
-        self._auth_headers = {"Authorization": f"Bearer {self.access_token}"}
+        """Fetch a fresh access token after a 401 and rebuild the auth header.
 
-        # Persisting the token (to share it with other clients) is best-effort:
-        # a persist failure must not block the retry, which already has the new
-        # token in-memory. Reuses the doctype's own _save_retry_once (built for
-        # exactly this race -- two concurrent clients each refreshing against
-        # their own in-memory copy) instead of a raw save(), which had no
-        # retry and was confirmed live to fail with TimestampMismatchError on
-        # every collision (2,000+ occurrences).
-        try:
-            self.settings._save_retry_once()
-        except Exception:
-            frappe.log_error("Unicommerce: failed to persist refreshed access token")
+        Holds a Redis lock for the actual refresh_token grant call -- see
+        _TOKEN_REFRESH_LOCK. A concurrent client that loses the race for the
+        lock re-reads the settings row once it gets in: another process may
+        already have refreshed while it waited, in which case it adopts that
+        token instead of calling Unicommerce's /oauth/token again with a
+        refresh token that's about to be (or already) rotated out.
+        """
+        with frappe.cache().lock(_TOKEN_REFRESH_LOCK, timeout=30):
+            self.settings.load_from_db()
+            already_fresh = (
+                self.settings.access_token
+                and self.settings.expires_on
+                and now_datetime() < get_datetime(self.settings.expires_on)
+            )
+            if already_fresh:
+                self.access_token = self.settings.get_password("access_token")
+            else:
+                self.settings.update_tokens(grant_type="refresh_token")
+                self.access_token = self.settings.access_token
+
+                # Persisting the token (to share it with other clients) is
+                # best-effort: a persist failure must not block the retry,
+                # which already has the new token in-memory. Reuses the
+                # doctype's own _save_retry_once (built for the DB-write side
+                # of this same race) instead of a raw save(), which had no
+                # retry and was confirmed live to fail with
+                # TimestampMismatchError on every collision (2,000+
+                # occurrences).
+                try:
+                    self.settings._save_retry_once()
+                except Exception:
+                    frappe.log_error("Unicommerce: failed to persist refreshed access token")
+        self._auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
     def request(
         self,

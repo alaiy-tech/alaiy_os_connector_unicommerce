@@ -110,11 +110,24 @@ class UnicommerceConnectorSettings(Document):
         if not needs_token:
             return
 
-        try:
-            self.update_tokens()
-        except Exception:
-            frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
-            raise
+        # Serialized against every other renew/refresh -- see
+        # unicommerce.client.core._TOKEN_REFRESH_LOCK for why: concurrent
+        # calls to Unicommerce's /oauth/token (this password grant or the
+        # client's refresh_token grant) race against each other and each
+        # invalidates the previous one's token. Re-check freshness once
+        # inside the lock in case another process already renewed it while
+        # this one waited.
+        with frappe.cache().lock("unicommerce_token_refresh", timeout=30):
+            self.load_from_db()
+            expires_on = get_datetime(self.expires_on) if self.expires_on else None
+            if self.get("access_token") and expires_on and now_datetime() < expires_on:
+                return
+
+            try:
+                self.update_tokens()
+            except Exception:
+                frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
+                raise
         # Only save when a token was actually fetched -- every UnicommerceClient()
         # construction calls renew_tokens(), so saving unconditionally meant every
         # single client instantiation (thousands per large pull run) wrote to this
