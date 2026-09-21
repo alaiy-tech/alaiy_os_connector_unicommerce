@@ -118,6 +118,10 @@ class UnicommerceConnectorSettings(Document):
         # inside the lock in case another process already renewed it while
         # this one waited.
         with frappe.cache().lock("unicommerce_token_refresh", timeout=30):
+            # Commit first to end this process's existing REPEATABLE READ
+            # snapshot -- see unicommerce.client.core._refresh_auth for why
+            # the lock alone isn't enough.
+            frappe.db.commit()
             self.load_from_db()
             expires_on = get_datetime(self.expires_on) if self.expires_on else None
             if self.get("access_token") and expires_on and now_datetime() < expires_on:

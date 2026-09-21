@@ -64,6 +64,14 @@ class UnicommerceClient:
         refresh token that's about to be (or already) rotated out.
         """
         with frappe.cache().lock(_TOKEN_REFRESH_LOCK, timeout=30):
+            # Commit first to end this process's existing REPEATABLE READ
+            # snapshot -- otherwise load_from_db() below can still return
+            # the pre-refresh row even though a concurrent process (which we
+            # just waited on) already committed a newer one: confirmed live,
+            # a handful of "invalid_token" errors survived the lock alone
+            # because the losing process's open transaction predated the
+            # winner's commit and couldn't see it without starting fresh.
+            frappe.db.commit()
             self.settings.load_from_db()
             already_fresh = (
                 self.settings.access_token
