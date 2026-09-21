@@ -34,7 +34,7 @@ import requests
 from frappe.utils import add_to_date, now_datetime
 
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
-from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
+from alaiy_os_connector_unicommerce.unicommerce.client.orders import _to_utc, get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
     discover_channels, get_configured_channels,
 )
@@ -224,7 +224,12 @@ def _facility_header() -> dict:
 
 
 def _as_utc(value) -> str:
-    return value.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    """Same conversion every other Unicommerce call uses, just with the
+    milliseconds the export API's date range wants. This used to do its own
+    `strftime` with no conversion at all, stamping site-local wall clock
+    with a "Z" -- a second, quietly disagreeing answer to the question
+    `_to_utc` already answers. One conversion, one place."""
+    return _to_utc(value).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 @frappe.whitelist()

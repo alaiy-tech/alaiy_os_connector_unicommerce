@@ -77,8 +77,14 @@ def run_full_purchase_order_import(client: UnicommerceClient = None):
 
 def sync_purchase_orders_for_range(created_from, created_to, client: UnicommerceClient = None):
     """Pull every Purchase Order created in [created_from, created_to] and
-    upsert it. Returns created_to on success (the caller decides whether that
-    means anything as a checkpoint), or None if no facility is configured."""
+    upsert it. Returns created_to when the window was genuinely read, or None
+    if it was not -- no facility configured, or a search call that failed.
+
+    The None-on-failure part matters: the caller checkpoints `last_po_sync`
+    on anything non-None, so returning created_to after a failed search
+    moved the cursor past a window nothing was ever read from, and no later
+    run would look at it again. A failed search and an empty one are not the
+    same answer, and only one of them is safe to checkpoint."""
     if client is None:
         client = UnicommerceClient()
 
@@ -99,16 +105,22 @@ def sync_purchase_orders_for_range(created_from, created_to, client: Unicommerce
     # searched in turn; a PO code found under one facility is then fetched
     # with THAT SAME facility, not re-tried across all of them.
     po_codes_by_facility = {}
+    search_failed = False
     for facility_code in facility_codes:
         codes = search_purchase_orders(
             client, created_from=created_from, created_to=created_to, facility_code=facility_code)
-        for code in codes or []:
+        # None is "the call did not answer" (the client logs the why);
+        # [] is "answered, nothing here". Only the first must hold the cursor.
+        if codes is None:
+            search_failed = True
+            continue
+        for code in codes:
             po_codes_by_facility.setdefault(code, facility_code)
 
     for po_code, facility_code in po_codes_by_facility.items():
         create_or_update_purchase_order(po_code, client=client, facility_codes=[facility_code])
 
-    return created_to
+    return None if search_failed else created_to
 
 
 def _default_start_date(settings):
