@@ -3,6 +3,7 @@
 """Unicommerce -> Alaiy OS order sync."""
 
 import json
+from collections import Counter
 from collections.abc import Iterator
 from typing import Any, NewType
 
@@ -385,10 +386,22 @@ def get_taxes(line_items: list, channel_config) -> list:
 
 
 def _get_facility_code(line_items: list) -> str:
-    facility_codes = {item.get("facilityCode") for item in line_items}
-    if len(facility_codes) > 1:
-        frappe.throw("Multiple facility codes found in a single order")
-    return next(iter(facility_codes))
+    """The order HEADER's facility -- used only for the company/dispatch
+    address defaults and the header's own FACILITY_CODE_FIELD, never for
+    fulfilment: each line item already resolves its own warehouse
+    independently in _get_line_items via wh_map.get(item["facilityCode"]).
+
+    An order legitimately CAN have items split across facilities (e.g. one
+    SKU shipped from a Delhi FC, another from Mumbai) -- that used to throw
+    and abort the whole order's sync, permanently (a Unicommerce order's
+    facility split doesn't change on retry, so every subsequent sync cycle
+    hit the exact same throw and the order simply never synced -- confirmed
+    live as 184 failures in 20 minutes once the real auth bug was out of the
+    way). Picking the facility with the most line items keeps that one
+    order's header pointing somewhere real instead of failing outright.
+    """
+    counts = Counter(item.get("facilityCode") for item in line_items)
+    return counts.most_common(1)[0][0]
 
 
 def _get_batch_no(so_line_item: dict) -> str | None:
