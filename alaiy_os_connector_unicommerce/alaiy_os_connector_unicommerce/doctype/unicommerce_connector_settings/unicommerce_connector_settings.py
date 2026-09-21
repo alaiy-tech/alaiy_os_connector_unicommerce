@@ -117,7 +117,19 @@ class UnicommerceConnectorSettings(Document):
         # invalidates the previous one's token. Re-check freshness once
         # inside the lock in case another process already renewed it while
         # this one waited.
-        with frappe.cache().lock("unicommerce_token_refresh", timeout=30):
+        # Best-effort: a lock problem must never fail authentication. A
+        # critical section holding an /oauth/token round trip can outlive the
+        # lock's own expiry under worker contention, and releasing an expired
+        # lock raises -- see core._refresh_auth for what that cost live.
+        lock = None
+        try:
+            lock = frappe.cache().lock("unicommerce_token_refresh", timeout=120, blocking_timeout=60)
+            if not lock.acquire(blocking=True):
+                lock = None
+        except Exception:
+            lock = None
+
+        try:
             # Commit first to end this process's existing REPEATABLE READ
             # snapshot -- see unicommerce.client.core._refresh_auth for why
             # the lock alone isn't enough.
@@ -132,6 +144,12 @@ class UnicommerceConnectorSettings(Document):
             except Exception:
                 frappe.log_error(title="Unicommerce: failed to authenticate", message=frappe.get_traceback())
                 raise
+        finally:
+            if lock is not None:
+                try:
+                    lock.release()
+                except Exception:
+                    pass
         # Only save when a token was actually fetched -- every UnicommerceClient()
         # construction calls renew_tokens(), so saving unconditionally meant every
         # single client instantiation (thousands per large pull run) wrote to this

@@ -74,7 +74,25 @@ class UnicommerceClient:
         confirmed live as an hour-long stuck outage across every endpoint.
         """
         failed_token = self.access_token
-        with frappe.cache().lock(_TOKEN_REFRESH_LOCK, timeout=30):
+
+        # The lock only SERIALISES the refresh; it is never what makes it
+        # correct (the stored-token comparison below does that). So nothing
+        # here may fail the call: with ~30 workers contending, a critical
+        # section holding a /oauth/token round trip can outlive the lock's
+        # own expiry, and releasing a lock Redis already expired raises --
+        # which propagated out of here, failed the request, made the order
+        # search return None and ended the whole sync pass in 0s reporting
+        # "success". Acquire best-effort, release best-effort, refresh either
+        # way.
+        lock = None
+        try:
+            lock = frappe.cache().lock(_TOKEN_REFRESH_LOCK, timeout=120, blocking_timeout=60)
+            if not lock.acquire(blocking=True):
+                lock = None
+        except Exception:
+            lock = None
+
+        try:
             # Commit first to end this process's existing REPEATABLE READ
             # snapshot -- otherwise load_from_db() below can still return
             # the pre-refresh row even though a concurrent process (which we
@@ -104,6 +122,12 @@ class UnicommerceClient:
                     self.settings._save_retry_once()
                 except Exception:
                     frappe.log_error("Unicommerce: failed to persist refreshed access token")
+        finally:
+            if lock is not None:
+                try:
+                    lock.release()
+                except Exception:
+                    pass  # expired under us -- the refresh itself still happened
         self._auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
     def request(

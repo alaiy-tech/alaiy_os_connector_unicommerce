@@ -70,6 +70,19 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
     updated_since = 24 * 60  # minutes
     uni_orders = search_sales_order(client, updated_since=updated_since, status=status)
     if uni_orders is None:
+        # A failed search used to return here silently, so the run finished in
+        # under a second and the Sync Log recorded "success" having imported
+        # nothing -- indistinguishable from a genuinely quiet window. Orders
+        # stopped arriving for a quarter of an hour before anyone could tell
+        # this apart from "no new orders".
+        frappe.log_error(
+            title="Unicommerce: order search failed, this run imported nothing",
+            message=(
+                f"search_sales_order returned no result (updated_since={updated_since} min, "
+                f"status={status}). The underlying HTTP failure is logged separately by the "
+                "client. This run is NOT a quiet window -- it never saw the order list."
+            ),
+        )
         return
 
     configured_channels = get_configured_channels()
