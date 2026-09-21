@@ -113,10 +113,29 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
     # its orders leave.
     skipped: dict[str, int] = {}
 
+    eligible = []
     for order in uni_orders:
         if order["channel"] not in configured_channels:
             skipped[order["channel"]] = skipped.get(order["channel"], 0) + 1
             continue
+        eligible.append(order)
+
+    # Orders we already hold still get re-fetched below -- that is deliberate,
+    # it retries invoice generation that previously failed -- but they must
+    # not go FIRST. The 24h window is ~1,500 orders of which ~1,400 are
+    # already imported, one HTTP call each, so a pass took 4-6 minutes and
+    # the orders placed in the last few minutes (the only ones a live
+    # dashboard is judged on) waited behind the whole of it. Sorting unseen
+    # first costs one bulk query and lands new orders in seconds instead.
+    codes = [o["code"] for o in eligible]
+    known = set()
+    if codes:
+        known = set(frappe.get_all(
+            "Sales Order", filters={ORDER_CODE_FIELD: ("in", codes)}, pluck=ORDER_CODE_FIELD))
+
+    # Stable sort: False (unseen) sorts before True, and each group keeps
+    # Unicommerce's own ordering within it.
+    for order in sorted(eligible, key=lambda o: o["code"] in known):
         # Re-fetch the full order (search results are summaries) -- if a
         # sales invoice failed to generate for some reason and got skipped,
         # this needs to be re-fetched and retried, not assumed already done.
