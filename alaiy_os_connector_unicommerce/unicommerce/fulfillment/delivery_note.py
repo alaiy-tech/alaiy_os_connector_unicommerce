@@ -13,7 +13,7 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 
 
 @frappe.whitelist()
-def prepare_delivery_note():
+def prepare_delivery_note(days_to_sync_override: int | None = None):
     """Auto-create a Delivery Note for every dispatched Unicommerce package.
 
     One order's failure (e.g. NegativeStockError because Bin is short of the
@@ -22,6 +22,22 @@ def prepare_delivery_note():
     whole function, so a single bad item aborted the entire batch silently,
     every single run, until that one item was fixed. Each order now gets its
     own try/except so the rest of the batch always completes.
+
+    The routine 5-minute cron always stays capped at 14 days -- widening that
+    would multiply this job's Unicommerce API calls by however much further
+    back it looked, every single run, forever. But the cap has a real cost:
+    a Sales Order whose Delivery Note isn't created within that window (its
+    Sales Invoice arrived late, a transient failure, or it shipped before
+    this job existed) is skipped every run after and NEVER revisited, since
+    the search itself only asks Unicommerce for packages updated within the
+    window. That order's stock stays reserved (`Bin.reserved_qty`) forever,
+    which is exactly the "Reserved inventory is far higher than actual
+    demand" symptom -- an accumulation of these across enough old orders
+    outweighs whatever's genuinely awaiting dispatch today.
+
+    `days_to_sync_override` exists for that: a one-off wider catch-up run,
+    not the automatic schedule. Run it by hand, e.g.:
+        bench --site <site> execute alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note --kwargs '{"days_to_sync_override": 90}'
     """
     try:
         settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
@@ -29,7 +45,7 @@ def prepare_delivery_note():
             return
 
         client = UnicommerceClient()
-        days_to_sync = min(settings.get("order_status_days") or 2, 14)
+        days_to_sync = days_to_sync_override or min(settings.get("order_status_days") or 2, 14)
         minutes = days_to_sync * 24 * 60
 
         enabled_facilities = list(settings.get_integration_to_erpnext_wh_mapping().keys())
