@@ -4,6 +4,10 @@
 
 from frappe.utils import cint
 
+#: Matches `order.sync_old_orders`'s PAGE_SIZE for the sibling saleOrder/search
+#: endpoint — same OMS search family, same `searchOptions` pagination shape.
+SHIPPING_PACKAGE_PAGE_SIZE = 1000
+
 
 def update_shipping_package(
     client,
@@ -79,14 +83,56 @@ def search_shipping_packages(
     statuses: list[str] | None = None,
     updated_since: int | None = 6 * 60,
 ):
-    """https://documentation.unicommerce.com/docs/pos-shippingpackage-search.html"""
-    body = {"statuses": statuses, "channelCode": channel, "updatedSinceInMinutes": updated_since}
-    body = {k: v for k, v in body.items() if v is not None}
+    """https://documentation.unicommerce.com/docs/pos-shippingpackage-search.html
 
-    search_results, ok = client.request(
-        endpoint="/services/rest/v1/oms/shippingPackage/search",
-        body=body,
-        headers={"Facility": facility_code},
-    )
-    if ok and "elements" in search_results:
-        return search_results["elements"]
+    Paginated. A single request without pagination silently returns only
+    Unicommerce's own default page of results, newest first, no matter how
+    wide `updated_since` is asked for -- confirmed live 2026-09-24, where a
+    60-day window returned almost exactly the same packages a 7-day window
+    already had, because both calls were really only ever seeing page one.
+    Callers asking for a wide backlog window (`fulfillment.delivery_note`'s
+    catch-up mode) would silently see only the most recent slice of it and
+    have no way to tell the rest was never even requested.
+
+    Walks pages with the same `searchOptions` shape `order.sync_old_orders`
+    already uses successfully against the sibling saleOrder/search endpoint
+    in this same OMS family, rather than inventing a new pagination
+    convention for one endpoint.
+    """
+    base_body = {"statuses": statuses, "channelCode": channel, "updatedSinceInMinutes": updated_since}
+    base_body = {k: v for k, v in base_body.items() if v is not None}
+
+    display_start = 0
+    total_records = None
+    elements: list = []
+
+    while True:
+        body = dict(base_body)
+        body["searchOptions"] = {
+            "displayStart": display_start,
+            "displayLength": SHIPPING_PACKAGE_PAGE_SIZE,
+            "getCount": display_start == 0,
+        }
+        search_results, ok = client.request(
+            endpoint="/services/rest/v1/oms/shippingPackage/search",
+            body=body,
+            headers={"Facility": facility_code},
+        )
+        if not ok or not search_results:
+            break
+
+        if display_start == 0:
+            total_records = search_results.get("totalRecords")
+
+        page = search_results.get("elements") or []
+        if not page:
+            break
+        elements.extend(page)
+
+        display_start += len(page)
+        if total_records is not None and display_start >= total_records:
+            break
+        if len(page) < SHIPPING_PACKAGE_PAGE_SIZE:
+            break
+
+    return elements
