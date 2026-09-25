@@ -235,12 +235,30 @@ def catch_up_on_stale_orders():
     not just until the next poll, because there is no forever for an order
     the poller has already stopped looking at.
 
-    Deliberately does NOT gate return handling on RETURN_POSSIBLE_STATE the
+    COMPLETE orders are included too, not just the ones stuck below it --
+    confirmed live with a second real case: an order already at COMPLETE
+    whose return closed weeks later, which the hourly poller's window
+    missed the same way. An order at COMPLETE is not proof its return
+    history was ever fully checked, only that its STATUS hasn't changed
+    since the last time something here or in the hourly poller wrote to it
+    -- and _update_order_status_fields / the block below both only touch
+    `modified` when the status value itself changes, so a COMPLETE order
+    that never changes status again can sit at the same `modified` forever
+    otherwise, either always excluded (the original version of this
+    function) or, if included naively, selected on every single run forever
+    since nothing ever moves it out of "oldest first". Every candidate this
+    function touches gets its `modified` bumped regardless of outcome (see
+    _apply_stale_order), which is what gives a clean order periodic re-
+    checks on the same STALE_ORDER_DAYS cadence instead of either of those
+    two failure modes. Only CANCELLED is excluded -- a cancelled order has
+    no delivery to return.
+
+    Deliberately does NOT gate RTO handling on RETURN_POSSIBLE_STATE the
     way the hourly customer-return path does: an RTO can close while an
     order is still sitting at PROCESSING and never reaches COMPLETE at all
-    (confirmed live -- see the module docstring's context), so gating this
-    sweep the same way would silently reproduce the exact gap it exists to
-    close. Customer returns still only get synced for COMPLETE orders
+    (confirmed live -- see above), so gating this sweep the same way would
+    silently reproduce the exact gap it exists to close. Customer returns
+    still only get synced for COMPLETE orders
     (`sync_customer_initiated_returns` needs that to mean anything), matching
     the hourly path's own semantics -- just without its extra 12-hour
     recency re-filter (`_filter_recent_orders` in cancellation.py), which
@@ -248,10 +266,8 @@ def catch_up_on_stale_orders():
     straight back out.
 
     Bounded and resumable like catch_up_on_unmapped_orders: a fixed batch of
-    the STALEST orders first. Each run makes real progress even if
-    interrupted -- touching an order updates its own `modified`, moving it
-    out of the next run's "oldest first" query -- without a dedicated
-    progress-tracking field.
+    the STALEST orders first, each run making real progress toward covering
+    the whole order book on a rolling STALE_ORDER_DAYS-ish cadence.
     """
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
@@ -263,7 +279,7 @@ def catch_up_on_stale_orders():
         FROM `tabSales Order`
         WHERE docstatus = 1
           AND `{ORDER_CODE_FIELD}` IS NOT NULL AND `{ORDER_CODE_FIELD}` != ''
-          AND COALESCE(NULLIF(`{ORDER_STATUS_FIELD}`, ''), '') NOT IN ('COMPLETE', 'CANCELLED')
+          AND COALESCE(NULLIF(`{ORDER_STATUS_FIELD}`, ''), '') != 'CANCELLED'
           AND modified < DATE_SUB(NOW(), INTERVAL %(stale_days)s DAY)
         ORDER BY modified ASC
         LIMIT %(batch_size)s
@@ -281,6 +297,13 @@ def catch_up_on_stale_orders():
             so_data = get_sales_order(client, row.order_code)
             if so_data:
                 _apply_stale_order(row.name, so_data, client)
+            else:
+                # No data back for a code Unicommerce should recognise --
+                # still counts as "checked" so this order doesn't get
+                # retried every single day forever on a call that keeps
+                # coming back empty.
+                frappe.db.set_value("Sales Order", row.name, ORDER_STATUS_FIELD,
+                                     frappe.db.get_value("Sales Order", row.name, ORDER_STATUS_FIELD))
             processed += 1
             # Per order, not once at the end -- same reasoning as
             # catch_up_on_unmapped_orders: one long-held transaction over a
@@ -302,9 +325,19 @@ def _apply_stale_order(so_name, so_data, client):
     update_shipping_package_status do for a freshly-polled one -- status
     refresh, cancellation, and return sync -- sourced from a single direct
     get_sales_order call instead of the bulk search, so it isn't limited by
-    either poller's own window or recency re-filter."""
+    either poller's own window or recency re-filter.
+
+    Writes the status field UNCONDITIONALLY, even when it hasn't changed --
+    frappe.db.set_value bumps `modified` on every call regardless of whether
+    the value differs, which is what stamps "checked on this date" and
+    moves this order out of catch_up_on_stale_orders's "oldest first" query
+    for STALE_ORDER_DAYS. Skipping the write when status is unchanged (the
+    original version of this function) meant a COMPLETE order with nothing
+    left to find would be re-selected and re-fetched every single run,
+    forever.
+    """
     status = so_data.get("status")
-    if status and frappe.db.get_value("Sales Order", so_name, ORDER_STATUS_FIELD) != status:
+    if status:
         frappe.db.set_value("Sales Order", so_name, ORDER_STATUS_FIELD, status)
 
     if status == "CANCELLED":
