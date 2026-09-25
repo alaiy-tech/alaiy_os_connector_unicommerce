@@ -63,6 +63,11 @@ scheduler_events = {
         # weeks without competing with the order sync for API quota, then
         # finds nothing and costs one query a day.
         "alaiy_os_connector_unicommerce.unicommerce.channel_listing.catch_up_on_unmapped_orders",
+        # Orders that fell out of the hourly pollers' own update_since window
+        # before a return on them was ever picked up -- see
+        # catch_up_on_stale_orders's docstring. Same bounded/resumable shape
+        # as the listing catch-up above.
+        "alaiy_os_connector_unicommerce.unicommerce.order.status.catch_up_on_stale_orders",
     ],
     "hourly_long": [
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_sales_order_status",
