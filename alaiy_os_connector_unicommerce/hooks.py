@@ -68,6 +68,11 @@ scheduler_events = {
         # catch_up_on_stale_orders's docstring. Same bounded/resumable shape
         # as the listing catch-up above.
         "alaiy_os_connector_unicommerce.unicommerce.order.status.catch_up_on_stale_orders",
+        # Same gap, for Delivery Notes: prepare_delivery_note's own docstring
+        # already named it (reserved stock accumulating on orders its capped
+        # window skipped) but only ever had a manual bench-execute override.
+        # See catch_up_on_stale_deliveries's docstring.
+        "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.catch_up_on_stale_deliveries",
     ],
     "hourly_long": [
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_sales_order_status",
