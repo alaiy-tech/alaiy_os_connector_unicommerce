@@ -38,7 +38,10 @@ from alaiy_os_connector_unicommerce.unicommerce.client.orders import _to_utc, ge
 from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
     discover_channels, get_configured_channels,
 )
-from alaiy_os_connector_unicommerce.unicommerce.constants import ORDER_CODE_FIELD, SETTINGS_DOCTYPE
+from alaiy_os_connector_unicommerce.unicommerce.constants import (
+    ORDER_CODE_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
+)
+from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import fully_cancel_orders
 from alaiy_os_connector_unicommerce.unicommerce.order.pull import create_order
 
 #: The export config that lists B2B orders. Confirmed against the live
@@ -69,6 +72,25 @@ _DOWNLOAD_TIMEOUT_SECONDS = 120
 #: already stored are skipped before any per-order fetch, so overlap is cheap.
 DEFAULT_LOOKBACK_DAYS = 30
 
+#: Once a B2B order's own status moves outside this set, Unicommerce has
+#: made a final call on it -- moving through fulfilment, or rejected -- and
+#: there is nothing left to learn by asking again. Anything still in one of
+#: these is provisional: Flipkart can still reject or amend the PO, yet
+#: `create_order` submits it as final revenue the instant it is first
+#: discovered, and until now nothing ever asked Unicommerce about a known
+#: order code a second time (`_already_imported` skipped it for good).
+#:
+#: Confirmed live 2026-09-28: a single Flipkart Minutes PO worth ~10.3L,
+#: over half that day's B2B revenue, was still PENDING_VERIFICATION on
+#: Unicommerce while sitting fully submitted here -- Unicommerce's own
+#: revenue-by-channel widget, which apparently only counts confirmed
+#: business orders, read ~7.9L lower than ours for the identical day as a
+#: direct result. `_reconcile_pending` below closes that gap for the one
+#: unambiguous case (Unicommerce rejects the PO outright); an amendment to
+#: quantity/price on an already-submitted order is a separate, riskier
+#: problem this deliberately does not attempt.
+_PENDING_B2B_STATUSES = {"PENDING_VERIFICATION"}
+
 
 def sync_b2b_orders(client: UnicommerceClient = None, force: bool = False, lookback_days: int = None):
     """Discover B2B orders via an export job and import the new ones."""
@@ -98,7 +120,8 @@ def sync_b2b_orders(client: UnicommerceClient = None, force: bool = False, lookb
     if not codes:
         return
 
-    for code in sorted(codes - _already_imported(codes)):
+    already = _already_imported(codes)
+    for code in sorted(codes - already):
         try:
             payload = get_sales_order(client, code)
             if payload:
@@ -108,9 +131,68 @@ def sync_b2b_orders(client: UnicommerceClient = None, force: bool = False, lookb
             # a B2B run covers a month of POs, not a single order.
             frappe.log_error(title=f"Unicommerce B2B: import failed for {code}")
 
+    # `already` is bounded by the same "addedOn" export window as `codes`
+    # itself (see EXPORT_FILTER_ID's docstring) -- exactly the set worth
+    # re-asking Unicommerce about, at the same cadence as new discovery,
+    # with no extra API call needed to find them.
+    _reconcile_pending(already, client)
+
     frappe.db.set_value(
         SETTINGS_DOCTYPE, None, "last_b2b_sync", now_datetime(), update_modified=False
     )
+
+
+def _reconcile_pending(codes: set[str], client: UnicommerceClient) -> None:
+    """Re-check already-imported B2B orders still sitting in a provisional
+    status, and cancel the ones Unicommerce has since rejected.
+
+    Deliberately narrow. A flip to CANCELLED is unambiguous and already has
+    a safe, established path (`fully_cancel_orders`, which refuses to touch
+    an order that already has a Sales Invoice against it). An amendment to a
+    still-pending order's quantity or price is a different, harder problem
+    -- cancelling and recreating an already-submitted document -- and is
+    deliberately left alone here rather than attempted as a silent
+    background correction.
+    """
+    if not codes:
+        return
+
+    pending_locally = frappe.get_all(
+        "Sales Order",
+        filters={
+            ORDER_CODE_FIELD: ("in", list(codes)),
+            ORDER_STATUS_FIELD: ("in", list(_PENDING_B2B_STATUSES)),
+            "docstatus": 1,
+        },
+        pluck=ORDER_CODE_FIELD,
+    )
+    if not pending_locally:
+        return
+
+    now_cancelled = []
+    for code in pending_locally:
+        try:
+            payload = get_sales_order(client, code)
+        except Exception:
+            frappe.log_error(title=f"Unicommerce B2B: status re-check failed for {code}")
+            continue
+        if not payload:
+            continue
+
+        live_status = payload.get("status")
+        if live_status == "CANCELLED":
+            now_cancelled.append(code)
+        elif live_status and live_status not in _PENDING_B2B_STATUSES:
+            # Moved on to a confirmed/processing state -- nothing to cancel,
+            # just stop calling it provisional so it drops out of this check
+            # on the next run instead of being re-fetched forever.
+            frappe.db.set_value(
+                "Sales Order", {ORDER_CODE_FIELD: code}, ORDER_STATUS_FIELD, live_status,
+                update_modified=False,
+            )
+
+    if now_cancelled:
+        fully_cancel_orders(now_cancelled)
 
 
 def _already_imported(codes: set[str]) -> set[str]:
