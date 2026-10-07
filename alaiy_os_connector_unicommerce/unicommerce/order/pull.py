@@ -16,7 +16,7 @@ from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_o
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
     CHANNEL_ID_FIELD, CHANNEL_TAX_ACCOUNT_FIELD_MAP, CUSTOMER_SHIPPING_CHARGE_FIELD, FACILITY_CODE_FIELD,
     INVOICE_CODE_FIELD, IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ITEM_SHIPPING_CHARGE_FIELD,
-    ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD,
+    ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD, ORDER_PLACED_AT_FIELD,
     ORDER_STATUS_FIELD, SETTINGS_DOCTYPE, TAX_FIELDS_MAPPING, TAX_RATE_FIELDS_MAPPING,
 )
 from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
@@ -26,7 +26,8 @@ from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
 from alaiy_os_connector_unicommerce.unicommerce.channel_listing import fill_from_order
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
-    ensure_multiple_items_allowed, get_dummy_tax_category, get_unicommerce_date, need_to_run,
+    ensure_multiple_items_allowed, get_dummy_tax_category, get_unicommerce_date, get_unicommerce_datetime,
+    need_to_run,
 )
 
 UnicommerceOrder = NewType("UnicommerceOrder", dict[str, Any])
@@ -292,6 +293,12 @@ def create_order(payload: UnicommerceOrder, request_id: str | None = None, clien
         if display_order_code and not so.get(ORDER_DISPLAY_CODE_FIELD):
             _backfill_display_order_code(order["code"], display_order_code)
             so.db_set(ORDER_DISPLAY_CODE_FIELD, display_order_code, update_modified=False)
+        # Same for the exact placed-at time, which orders imported before the
+        # field existed do not have.
+        if not so.get(ORDER_PLACED_AT_FIELD) and order.get("displayOrderDateTime"):
+            placed_at = get_unicommerce_datetime(order["displayOrderDateTime"])
+            if placed_at:
+                so.db_set(ORDER_PLACED_AT_FIELD, placed_at, update_modified=False)
         return so
 
     if client is None:
@@ -365,6 +372,7 @@ def _create_order(order: UnicommerceOrder, customer):
         FACILITY_CODE_FIELD: facility_code,
         IS_COD_CHECKBOX: bool(order["cod"]),
         "transaction_date": get_unicommerce_date(order["displayOrderDateTime"]),
+        ORDER_PLACED_AT_FIELD: get_unicommerce_datetime(order["displayOrderDateTime"]),
         "delivery_date": get_unicommerce_date(order["fulfillmentTat"]),
         "ignore_pricing_rule": 1,
         "items": _get_line_items(

@@ -286,6 +286,11 @@ def _get_custom_field(data: dict, field_name: str) -> str:
 
 
 def _epoch_ms_to_date(value):
+    """Epoch ms to a calendar date in the SITE's timezone. fromtimestamp()
+    alone resolves in the host's timezone, which on a UTC host running an IST
+    site put anything created between 00:00 and 05:30 IST on the day before."""
     if not value:
         return None
-    return datetime.datetime.fromtimestamp(cint(value) // 1000).date()
+    from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_date
+
+    return get_unicommerce_date(cint(value))

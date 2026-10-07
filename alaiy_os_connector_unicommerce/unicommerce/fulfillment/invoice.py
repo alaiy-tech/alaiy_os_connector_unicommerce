@@ -27,7 +27,9 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
 )
 from alaiy_os_connector_unicommerce.unicommerce.order.pull import get_item_shipping_charge, get_taxes
-from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_date, remove_non_alphanumeric_chars
+from alaiy_os_connector_unicommerce.unicommerce.utils import (
+    get_unicommerce_date, get_unicommerce_datetime, remove_non_alphanumeric_chars,
+)
 
 JsonDict = dict[str, Any]
 SOCode = NewType("SOCode", str)
@@ -277,6 +279,13 @@ def create_sales_invoice(
     si.set(CHANNEL_ID_FIELD, channel)
     si.set_posting_time = 1
     si.posting_date = get_unicommerce_date(si_data["created"])
+    # set_posting_time makes ERPNext keep what is set here, and a posting_time
+    # left unset becomes the moment this import ran, which can be days after
+    # the invoice. Use the invoice's own time; an unreadable value keeps the
+    # default.
+    invoiced_at = get_unicommerce_datetime(si_data["created"])
+    if invoiced_at:
+        si.posting_time = invoiced_at.strftime("%H:%M:%S")
     si.transaction_date = si.posting_date
     si.naming_series = channel_config.sales_invoice_series or settings.sales_invoice_series
     si.delivery_date = so.delivery_date
