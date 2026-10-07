@@ -139,18 +139,10 @@ def _ensure_list_view_column(doctype, fieldname, label):
     frappe.db.commit()
 
 
-# ---------------------------------------------------------------------------
-# Sale order-level statuses per Unicommerce docs (oms-overview.md) plus
-# PENDING_VERIFICATION, seen live in order-onhold.md and in real order data.
-ORDER_STATUS_OPTIONS = "\nCREATED\nPENDING_VERIFICATION\nPROCESSING\nCOMPLETE\nCANCELLED"
-
-# Full shipment status lifecycle (forward + reverse delivery) per Unicommerce
-# docs (oms-overview.md, "Shipment Status").
-ORDER_SHIPMENT_STATUS_OPTIONS = (
-    "\nCREATED\nLOCATION_NOT_SERVICEABLE\nPICKING\nPICKED\nPACKED\nREADY_TO_SHIP\nCANCELLED"
-    "\nMANIFESTED\nDISPATCHED\nSHIPPED\nDELIVERED\nPENDING_CUSTOMIZATION\nCUSTOMIZATION_COMPLETE"
-    "\nSPLITTED\nMERGED\nRETURN_EXPECTED\nRETURNED\nRETURN_ACKNOWLEDGED"
-)
+# Status fields are free text, not pick-lists: Unicommerce adds and renames
+# statuses, and ERPNext rejects a Select value outside its options, which would
+# fail the whole order's import over a status label. Whatever Unicommerce sends
+# is stored as it arrives.
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +164,9 @@ def setup_custom_fields():
         FACILITY_CODE_FIELD, GRN_CODE_FIELD, GRN_RAW_JSON_FIELD, GRN_SYNCED_AT_FIELD,
         ITEM_SHIPPING_CHARGE_FIELD, ITEM_RETURN_REASON_FIELD, ITEM_RETURN_QC_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
-        ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
-        ORDER_ITEM_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
+        ORDER_DELIVERED_ON_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_PLACED_AT_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
+        ORDER_ITEM_CODE_FIELD, ORDER_ITEM_STATUS_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD,
+        PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
         PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
         PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
         PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, RETURN_COURIER_FIELD,
@@ -304,16 +297,23 @@ def setup_custom_fields():
                  insert_after=ORDER_DISPLAY_CODE_FIELD, read_only=1, options="Unicommerce Channel", search_index=1),
             dict(fieldname=FACILITY_CODE_FIELD, label="Unicommerce Facility Code", fieldtype="Small Text",
                  insert_after=CHANNEL_ID_FIELD, read_only=1),
-            dict(fieldname=ORDER_STATUS_FIELD, label="Unicommerce Order Status", fieldtype="Select",
-                 options=ORDER_STATUS_OPTIONS, insert_after=FACILITY_CODE_FIELD, read_only=1,
+            dict(fieldname=ORDER_STATUS_FIELD, label="Unicommerce Order Status", fieldtype="Data",
+                 insert_after=FACILITY_CODE_FIELD, read_only=1,
                  in_list_view=1, in_standard_filter=1),
             dict(fieldname=ORDER_INVOICE_STATUS_FIELD, label="Unicommerce Invoice generation Status",
                  fieldtype="Small Text", insert_after=ORDER_STATUS_FIELD, read_only=1),
-            dict(fieldname=ORDER_SHIPMENT_STATUS_FIELD, label="Unicommerce Shipment Status", fieldtype="Select",
-                 options=ORDER_SHIPMENT_STATUS_OPTIONS, insert_after=ORDER_INVOICE_STATUS_FIELD, read_only=1,
+            dict(fieldname=ORDER_SHIPMENT_STATUS_FIELD, label="Unicommerce Shipment Status", fieldtype="Data",
+                 insert_after=ORDER_INVOICE_STATUS_FIELD, read_only=1,
                  in_list_view=1, in_standard_filter=1,
                  description="Populated directly from Unicommerce shipping package status, independent of "
                              "whether this order has a local Sales Invoice yet."),
+            dict(fieldname=ORDER_PLACED_AT_FIELD, label="Unicommerce Order Placed At", fieldtype="Datetime",
+                 insert_after=ORDER_DISPLAY_CODE_FIELD, read_only=1,
+                 description="The exact time the order was placed, in the site's timezone. "
+                             "Transaction Date holds only the day."),
+            dict(fieldname=ORDER_DELIVERED_ON_FIELD, label="Unicommerce Delivered On", fieldtype="Datetime",
+                 insert_after=ORDER_SHIPMENT_STATUS_FIELD, read_only=1,
+                 description="When Unicommerce reports the shipment delivered."),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
                  options="Unicommerce Package Type", insert_after=ORDER_INVOICE_STATUS_FIELD, allow_on_submit=1),
             dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",
@@ -330,6 +330,9 @@ def setup_custom_fields():
                  insert_after="item_code", read_only=1),
             dict(fieldname=ORDER_ITEM_BATCH_NO, label="Unicommerce Batch Code", fieldtype="Data",
                  insert_after=ORDER_ITEM_CODE_FIELD, read_only=1),
+            dict(fieldname=ORDER_ITEM_STATUS_FIELD, label="Unicommerce Item Status", fieldtype="Data",
+                 insert_after=ORDER_ITEM_BATCH_NO, read_only=1,
+                 description="This line's own status in Unicommerce (dispatched, delivered, returned, ...)."),
             dict(fieldname=ITEM_SHIPPING_CHARGE_FIELD, label="Unicommerce Shipping Charge", fieldtype="Currency",
                  insert_after=ORDER_ITEM_BATCH_NO, read_only=1),
         ],
@@ -468,22 +471,28 @@ def setup_custom_fields():
     # instead, which goes through the normal create path that alters the
     # DB column. Safe: same fieldname, values are short status strings that
     # fit a Select's varchar column with no truncation.
-    status_field_name = "Sales Order-" + ORDER_STATUS_FIELD
-    existing = frappe.db.get_value("Custom Field", status_field_name, "fieldtype")
-    if existing and existing != "Select":
-        frappe.delete_doc("Custom Field", status_field_name, ignore_permissions=True, force=True)
-        frappe.get_doc({
-            "doctype": "Custom Field",
-            "dt": "Sales Order",
-            "fieldname": ORDER_STATUS_FIELD,
-            "label": "Unicommerce Order Status",
-            "fieldtype": "Select",
-            "options": ORDER_STATUS_OPTIONS,
-            "insert_after": FACILITY_CODE_FIELD,
-            "read_only": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-        }).insert(ignore_permissions=True)
+    # Both status fields used to be Select pick-lists. An existing field is
+    # recreated as Data the same way: delete and recreate under the same
+    # fieldname, which alters the column in place and keeps the values.
+    for fieldname, label, after in (
+        (ORDER_STATUS_FIELD, "Unicommerce Order Status", FACILITY_CODE_FIELD),
+        (ORDER_SHIPMENT_STATUS_FIELD, "Unicommerce Shipment Status", ORDER_INVOICE_STATUS_FIELD),
+    ):
+        field_name = "Sales Order-" + fieldname
+        existing = frappe.db.get_value("Custom Field", field_name, "fieldtype")
+        if existing and existing != "Data":
+            frappe.delete_doc("Custom Field", field_name, ignore_permissions=True, force=True)
+            frappe.get_doc({
+                "doctype": "Custom Field",
+                "dt": "Sales Order",
+                "fieldname": fieldname,
+                "label": label,
+                "fieldtype": "Data",
+                "insert_after": after,
+                "read_only": 1,
+                "in_list_view": 1,
+                "in_standard_filter": 1,
+            }).insert(ignore_permissions=True)
 
     _ensure_list_view_column("Sales Order", ORDER_STATUS_FIELD, "Unicommerce Order Status")
 

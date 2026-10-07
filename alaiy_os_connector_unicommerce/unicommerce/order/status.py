@@ -9,9 +9,10 @@ from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.manifest import search_shipping_packages
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order, search_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
-    ORDER_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
+    ORDER_CODE_FIELD, ORDER_DELIVERED_ON_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
     SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD,
 )
+from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_datetime
 from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import (
     check_and_update_customer_initiated_returns, create_rto_return, fully_cancel_orders,
     sync_customer_initiated_returns, update_erpnext_order_items, update_partially_cancelled_orders,
@@ -19,7 +20,24 @@ from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import (
 
 PARTIAL_CANCELLED_STATES = ["PENDING_VERIFICATION", "CREATED", "PROCESSING"]
 RETURN_POSSIBLE_STATE = ["COMPLETE"]
-SHIPMENT_RETURN_STATES = ["RETURN_EXPECTED", "RETURNED"]
+SHIPMENT_RETURN_STATES = ["RETURN_EXPECTED", "RETURNED", "RETURN_ACKNOWLEDGED"]
+
+#: How far along a shipment is, in the order Unicommerce lists the statuses
+#: (oms-overview, "Shipment Status"), reverse statuses last. An order with
+#: several packages shows its furthest-along one. Statuses missing here
+#: (cancelled, split, merged, not serviceable, customization) say nothing about
+#: progress and only count when no package has a ranked status.
+SHIPMENT_STATUS_RANK = {
+    "CREATED": 1, "PICKING": 2, "PICKED": 3, "PACKED": 4, "READY_TO_SHIP": 5, "MANIFESTED": 6,
+    "DISPATCHED": 7, "SHIPPED": 8, "DELIVERED": 9,
+    "RETURN_EXPECTED": 10, "RETURNED": 11, "RETURN_ACKNOWLEDGED": 12,
+}
+
+
+def _furthest_package(packages):
+    """The package that best represents the order's shipment progress, so the
+    result does not depend on the order Unicommerce happened to list them in."""
+    return max(packages, key=lambda p: SHIPMENT_STATUS_RANK.get(p.get("status"), 0))
 
 #: How many stale orders one catch-up run touches, and how old "stale" means.
 #: Bounded the same way channel_listing.catch_up_on_unmapped_orders is: a
@@ -34,7 +52,25 @@ STALE_ORDER_BATCH = 500
 STALE_ORDER_DAYS = 14
 
 
-def update_sales_order_status():
+#: Window of the frequent status polls. Wider than their 5-minute cadence so a
+#: missed or slow run does not lose a change; the hourly runs, with the
+#: configured multi-day window, remain the safety net behind them.
+RECENT_STATUS_WINDOW_MINUTES = 30
+
+
+def poll_recent_order_status():
+    """Frequent poll: order-level changes (cancellations, completion, returns)
+    from the last RECENT_STATUS_WINDOW_MINUTES."""
+    update_sales_order_status(window_minutes=RECENT_STATUS_WINDOW_MINUTES)
+
+
+def poll_recent_shipping_status():
+    """Frequent poll: shipment-level changes (dispatched, delivered, returned)
+    from the last RECENT_STATUS_WINDOW_MINUTES."""
+    update_shipping_package_status(window_minutes=RECENT_STATUS_WINDOW_MINUTES)
+
+
+def update_sales_order_status(window_minutes: int | None = None):
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
         return
@@ -42,7 +78,7 @@ def update_sales_order_status():
     client = UnicommerceClient()
 
     days_to_sync = min(settings.get("order_status_days") or 2, 14)
-    minutes = days_to_sync * 24 * 60
+    minutes = window_minutes or days_to_sync * 24 * 60
     updated_orders = search_sales_order(client, updated_since=minutes) or []
 
     enabled_channels = frappe.db.get_list("Unicommerce Channel", filters={"enabled": 1}, pluck="channel_id")
@@ -142,7 +178,7 @@ def ignore_pick_list_on_sales_order_cancel(doc, method=None):
     doc.ignore_linked_doctypes = ignored_links
 
 
-def update_shipping_package_status():
+def update_shipping_package_status(window_minutes: int | None = None):
     """Periodically pull changed shipping package info into ERPNext."""
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
@@ -151,7 +187,7 @@ def update_shipping_package_status():
     client = UnicommerceClient()
 
     days_to_sync = min(settings.get("order_status_days") or 2, 14)
-    minutes = days_to_sync * 24 * 60
+    minutes = window_minutes or days_to_sync * 24 * 60
 
     enabled_facilities = list(settings.get_integration_to_erpnext_wh_mapping().keys())
     enabled_channels = frappe.db.get_list("Unicommerce Channel", filters={"enabled": 1}, pluck="channel_id")
@@ -187,18 +223,27 @@ def _track_order_shipment_status(packages):
     if not packages_with_order:
         return
 
-    order_shipment_status_map = {}
+    # One status per order, from its furthest-along package. A later package in
+    # the list used to overwrite earlier ones, so an order with one delivered
+    # and one cancelled or still-picking package showed whichever came last.
+    packages_by_order = {}
     for package in packages_with_order:
-        order_shipment_status_map[package["saleOrderCode"]] = package["status"]
+        packages_by_order.setdefault(package["saleOrderCode"], []).append(package)
+    furthest = {code: _furthest_package(group) for code, group in packages_by_order.items()}
 
     current = frappe.db.get_values(
-        "Sales Order", {ORDER_CODE_FIELD: ("in", list(order_shipment_status_map.keys()))},
-        fieldname=["name", ORDER_SHIPMENT_STATUS_FIELD, ORDER_CODE_FIELD], as_dict=True,
+        "Sales Order", {ORDER_CODE_FIELD: ("in", list(furthest.keys()))},
+        fieldname=["name", ORDER_SHIPMENT_STATUS_FIELD, ORDER_DELIVERED_ON_FIELD, ORDER_CODE_FIELD], as_dict=True,
     )
     for order in current:
-        new_status = order_shipment_status_map.get(order.get(ORDER_CODE_FIELD))
+        package = furthest.get(order.get(ORDER_CODE_FIELD))
+        new_status = package["status"]
         if order.get(ORDER_SHIPMENT_STATUS_FIELD) != new_status:
             frappe.db.set_value("Sales Order", order["name"], ORDER_SHIPMENT_STATUS_FIELD, new_status)
+        if new_status == "DELIVERED":
+            delivered_on = get_unicommerce_datetime(package.get("delivered"))
+            if delivered_on and order.get(ORDER_DELIVERED_ON_FIELD) != delivered_on:
+                frappe.db.set_value("Sales Order", order["name"], ORDER_DELIVERED_ON_FIELD, delivered_on)
 
 
 def _update_package_status_fields(packages):

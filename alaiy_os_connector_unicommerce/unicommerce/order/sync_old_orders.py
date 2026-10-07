@@ -87,8 +87,10 @@ def _run_sync(settings, from_date, to_date, client=None):
         client = UnicommerceClient()
 
     frappe.set_user("Administrator")  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser
-    completed_mode = bool(settings.only_sync_completed_orders)
-    status = "COMPLETE" if completed_mode else None
+    # Every status, same as the routine pull; only_sync_completed_orders no
+    # longer limits what is imported.
+    completed_mode = False
+    status = None
     enabled_channels = get_configured_channels()
 
     summary = {

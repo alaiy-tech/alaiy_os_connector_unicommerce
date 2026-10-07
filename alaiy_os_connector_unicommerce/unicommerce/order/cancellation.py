@@ -13,7 +13,7 @@ from erpnext.controllers.accounts_controller import update_child_qty_rate
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_return, get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
     CHANNEL_ID_FIELD, FACILITY_CODE_FIELD, ITEM_EXTERNAL_ID_FIELD, ORDER_CODE_FIELD,
-    ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD,
+    ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_CODE_FIELD, ORDER_STATUS_FIELD,
     RETURN_CODE_FIELD, RETURN_COURIER_FIELD, RETURN_PINCODE_FIELD, RETURN_REASON_FIELD,
     RETURN_TYPE_FIELD, ITEM_RETURN_REASON_FIELD, ITEM_RETURN_QC_FIELD,
     SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
@@ -235,6 +235,14 @@ def fully_cancel_orders(unicommerce_order_codes: list[str]) -> None:
         )
         if not linked_sales_invoice:
             frappe.get_doc("Sales Order", order.name).cancel()
+        else:
+            # Cancelled in Unicommerce but already invoiced here: cancelling
+            # the Sales Order would fail on the linked invoice, so it stays
+            # live. Say so on the order itself, once, instead of leaving a
+            # CANCELLED status next to an open order with nothing pointing at it.
+            note = "Cancelled in Unicommerce; a Sales Invoice is already submitted -- review manually."
+            if frappe.db.get_value("Sales Order", order.name, ORDER_INVOICE_STATUS_FIELD) != note:
+                frappe.db.set_value("Sales Order", order.name, ORDER_INVOICE_STATUS_FIELD, note)
 
 
 def update_partially_cancelled_orders(orders, client) -> None:
