@@ -16,7 +16,8 @@ from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_o
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
     CHANNEL_ID_FIELD, CHANNEL_TAX_ACCOUNT_FIELD_MAP, CUSTOMER_SHIPPING_CHARGE_FIELD, FACILITY_CODE_FIELD,
     INVOICE_CODE_FIELD, IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ITEM_SHIPPING_CHARGE_FIELD,
-    ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD, ORDER_PLACED_AT_FIELD,
+    ORDER_CODE_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_ITEM_BATCH_NO, ORDER_ITEM_CODE_FIELD, ORDER_ITEM_STATUS_FIELD,
+    ORDER_PLACED_AT_FIELD,
     ORDER_STATUS_FIELD, SETTINGS_DOCTYPE, TAX_FIELDS_MAPPING, TAX_RATE_FIELDS_MAPPING,
 )
 from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
@@ -299,6 +300,7 @@ def create_order(payload: UnicommerceOrder, request_id: str | None = None, clien
             placed_at = get_unicommerce_datetime(order["displayOrderDateTime"])
             if placed_at:
                 so.db_set(ORDER_PLACED_AT_FIELD, placed_at, update_modified=False)
+        _sync_item_statuses(so.name, order)
         return so
 
     if client is None:
@@ -313,6 +315,21 @@ def create_order(payload: UnicommerceOrder, request_id: str | None = None, clien
             title=f"Unicommerce: failed to create Sales Order for {order.get('code')}",
             message=frappe.get_traceback(),
         )
+
+
+def _sync_item_statuses(so_name: str, order: dict) -> None:
+    """Keep each line's own Unicommerce status current. The order status alone
+    cannot say that one line was dispatched or returned while another was not."""
+    wanted = {i.get("code"): i.get("statusCode") for i in order.get("saleOrderItems") or [] if i.get("code")}
+    if not wanted:
+        return
+    for row in frappe.get_all(
+        "Sales Order Item", filters={"parent": so_name},
+        fields=["name", ORDER_ITEM_CODE_FIELD, ORDER_ITEM_STATUS_FIELD],
+    ):
+        status = wanted.get(row.get(ORDER_ITEM_CODE_FIELD))
+        if status and row.get(ORDER_ITEM_STATUS_FIELD) != status:
+            frappe.db.set_value("Sales Order Item", row.name, ORDER_ITEM_STATUS_FIELD, status, update_modified=False)
 
 
 def _backfill_display_order_code(uni_order_code: str, display_order_code: str) -> None:
@@ -421,6 +438,7 @@ def _get_line_items(line_items: list, default_warehouse: str | None = None, is_c
             "stock_uom": "Nos",
             "warehouse": warehouse,
             ORDER_ITEM_CODE_FIELD: item.get("code"),
+            ORDER_ITEM_STATUS_FIELD: item.get("statusCode"),
             ORDER_ITEM_BATCH_NO: _get_batch_no(item),
             ITEM_SHIPPING_CHARGE_FIELD: get_item_shipping_charge(item),
         })
