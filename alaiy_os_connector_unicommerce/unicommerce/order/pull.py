@@ -38,6 +38,10 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
     if not settings.is_enabled:
         return
 
+    # Read before need_to_run, which overwrites last_order_sync when it fires.
+    previous_run = frappe.db.get_single_value(SETTINGS_DOCTYPE, "last_order_sync")
+    run_started = now_datetime()
+
     # Also updates last_order_sync as a side effect when it actually runs.
     if not force and not need_to_run(SETTINGS_DOCTYPE, "order_sync_frequency", "last_order_sync"):
         return
@@ -45,8 +49,12 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
     if client is None:
         client = UnicommerceClient()
 
-    status = "COMPLETE" if settings.only_sync_completed_orders else None
-    new_orders = _get_new_orders(client, status=status)
+    # Every status, always: a new order has to be imported when it lands and
+    # followed through dispatch, delivery, return and cancellation, which a
+    # COMPLETE-only pull cannot do. only_sync_completed_orders no longer limits
+    # this.
+    status = None
+    new_orders = _get_new_orders(client, status=status, changed_since=_changed_since_minutes(previous_run, run_started))
     if new_orders is None:
         return
 
@@ -61,13 +69,35 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
     # its zero value forever while orders demonstrably arrive -- which reads
     # as "this sync has never run" to anyone checking why data looks stale,
     # and sent a live investigation down the wrong path for an afternoon.
+    # The time this run STARTED, not finished: an order updated while the run
+    # was working would otherwise fall between this run's window and the next.
     frappe.db.set_value(
-        SETTINGS_DOCTYPE, None, "last_order_sync", now_datetime(), update_modified=False
+        SETTINGS_DOCTYPE, None, "last_order_sync", run_started, update_modified=False
     )
 
 
-def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[UnicommerceOrder] | None:
-    updated_since = 24 * 60  # minutes
+FULL_WINDOW_MINUTES = 24 * 60
+#: Slack added to the time since the last run, so an order updated just before
+#: that run started is still inside the narrow window of the next one.
+CHANGED_WINDOW_BUFFER_MINUTES = 10
+MIN_CHANGED_WINDOW_MINUTES = 15
+
+
+def _changed_since_minutes(previous_run, now) -> int:
+    """How far back "changed since the last run" reaches, in minutes. The whole
+    day when there is no previous run or it is older than that."""
+    if not previous_run:
+        return FULL_WINDOW_MINUTES
+    elapsed = (now - previous_run).total_seconds() / 60
+    if elapsed < 0:
+        return FULL_WINDOW_MINUTES
+    return min(FULL_WINDOW_MINUTES, max(MIN_CHANGED_WINDOW_MINUTES, int(elapsed) + CHANGED_WINDOW_BUFFER_MINUTES))
+
+
+def _get_new_orders(
+    client: UnicommerceClient, status: str | None, changed_since: int = FULL_WINDOW_MINUTES
+) -> Iterator[UnicommerceOrder] | None:
+    updated_since = FULL_WINDOW_MINUTES
     uni_orders = search_sales_order(client, updated_since=updated_since, status=status)
     if uni_orders is None:
         # A failed search used to return here silently, so the run finished in
@@ -120,22 +150,57 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
             continue
         eligible.append(order)
 
-    # Orders we already hold still get re-fetched below -- that is deliberate,
-    # it retries invoice generation that previously failed -- but they must
-    # not go FIRST. The 24h window is ~1,500 orders of which ~1,400 are
-    # already imported, one HTTP call each, so a pass took 4-6 minutes and
-    # the orders placed in the last few minutes (the only ones a live
-    # dashboard is judged on) waited behind the whole of it. Sorting unseen
-    # first costs one bulk query and lands new orders in seconds instead.
+    # Fetching each order costs one request, and ~1,400 of the ~1,500 orders in
+    # a 24h window are already imported, so re-fetching all of them every run
+    # took minutes and made a short sync interval pointless. An order only
+    # needs fetching again when something about it can have changed:
+    #   * we have never seen it;
+    #   * its status differs from the one stored locally;
+    #   * Unicommerce reports it updated since the last run (a package getting
+    #     invoiced does not change the order's own status, but this is where a
+    #     Sales Invoice for that package is created);
+    #   * it is COMPLETE and still has no Sales Invoice, so a failed invoice
+    #     is retried.
+    # Unseen orders go first so a new order is imported within seconds.
     codes = [o["code"] for o in eligible]
-    known = set()
+    local_status = {}
+    invoiced = set()
     if codes:
-        known = set(frappe.get_all(
-            "Sales Order", filters={ORDER_CODE_FIELD: ("in", codes)}, pluck=ORDER_CODE_FIELD))
+        local_status = {
+            r[ORDER_CODE_FIELD]: r.get(ORDER_STATUS_FIELD)
+            for r in frappe.get_all(
+                "Sales Order", filters={ORDER_CODE_FIELD: ("in", codes)},
+                fields=[ORDER_CODE_FIELD, ORDER_STATUS_FIELD])
+        }
+        invoiced = set(frappe.get_all(
+            "Sales Invoice", filters={ORDER_CODE_FIELD: ("in", codes)}, pluck=ORDER_CODE_FIELD))
+
+    recently_changed = set()
+    if changed_since < FULL_WINDOW_MINUTES:
+        changed = search_sales_order(client, updated_since=changed_since, status=status)
+        if changed is None:
+            # Not a quiet window: without this list a package invoiced since the
+            # last run would be missed, so fall back to fetching every held order.
+            recently_changed = set(codes)
+        else:
+            recently_changed = {o["code"] for o in changed}
+    else:
+        recently_changed = set(codes)
+
+    to_fetch = []
+    for order in eligible:
+        code = order["code"]
+        if (
+            code not in local_status
+            or local_status[code] != order.get("status")
+            or code in recently_changed
+            or (order.get("status") == "COMPLETE" and code not in invoiced)
+        ):
+            to_fetch.append(order)
 
     # Stable sort: False (unseen) sorts before True, and each group keeps
     # Unicommerce's own ordering within it.
-    for order in sorted(eligible, key=lambda o: o["code"] in known):
+    for order in sorted(to_fetch, key=lambda o: o["code"] in local_status):
         # Re-fetch the full order (search results are summaries) -- if a
         # sales invoice failed to generate for some reason and got skipped,
         # this needs to be re-fetched and retried, not assumed already done.
@@ -152,8 +217,8 @@ def _get_new_orders(client: UnicommerceClient, status: str | None) -> Iterator[U
 def _create_sales_invoices(unicommerce_order: dict, sales_order, client: UnicommerceClient):
     """Create a Sales Invoice per shipping package that Unicommerce has
     actually invoiced -- called on every order pull now, not gated behind
-    only_sync_completed_orders (that setting controls which orders get
-    PULLED, e.g. only COMPLETE-status orders; invoicing is a separate
+    only_sync_completed_orders (which no longer limits what gets PULLED;
+    invoicing is a separate
     concern and should run for any pulled order regardless, matching
     real-world orders that ship after being pulled in a non-final state).
 

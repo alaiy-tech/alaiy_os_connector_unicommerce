@@ -177,7 +177,7 @@
   },
   {
    "default": "0",
-   "description": "Only sync orders once they're fully processed on Unicommerce -- one-way sync from Unicommerce to Alaiy OS only.",
+   "description": "No longer limits the sync: orders of every status are imported and their status is tracked until delivery, return or cancellation.",
    "fieldname": "only_sync_completed_orders",
    "fieldtype": "Check",
    "label": "Only Sync Completed Orders"

@@ -34,7 +34,25 @@ STALE_ORDER_BATCH = 500
 STALE_ORDER_DAYS = 14
 
 
-def update_sales_order_status():
+#: Window of the frequent status polls. Wider than their 5-minute cadence so a
+#: missed or slow run does not lose a change; the hourly runs, with the
+#: configured multi-day window, remain the safety net behind them.
+RECENT_STATUS_WINDOW_MINUTES = 30
+
+
+def poll_recent_order_status():
+    """Frequent poll: order-level changes (cancellations, completion, returns)
+    from the last RECENT_STATUS_WINDOW_MINUTES."""
+    update_sales_order_status(window_minutes=RECENT_STATUS_WINDOW_MINUTES)
+
+
+def poll_recent_shipping_status():
+    """Frequent poll: shipment-level changes (dispatched, delivered, returned)
+    from the last RECENT_STATUS_WINDOW_MINUTES."""
+    update_shipping_package_status(window_minutes=RECENT_STATUS_WINDOW_MINUTES)
+
+
+def update_sales_order_status(window_minutes: int | None = None):
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
         return
@@ -42,7 +60,7 @@ def update_sales_order_status():
     client = UnicommerceClient()
 
     days_to_sync = min(settings.get("order_status_days") or 2, 14)
-    minutes = days_to_sync * 24 * 60
+    minutes = window_minutes or days_to_sync * 24 * 60
     updated_orders = search_sales_order(client, updated_since=minutes) or []
 
     enabled_channels = frappe.db.get_list("Unicommerce Channel", filters={"enabled": 1}, pluck="channel_id")
@@ -142,7 +160,7 @@ def ignore_pick_list_on_sales_order_cancel(doc, method=None):
     doc.ignore_linked_doctypes = ignored_links
 
 
-def update_shipping_package_status():
+def update_shipping_package_status(window_minutes: int | None = None):
     """Periodically pull changed shipping package info into ERPNext."""
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
@@ -151,7 +169,7 @@ def update_shipping_package_status():
     client = UnicommerceClient()
 
     days_to_sync = min(settings.get("order_status_days") or 2, 14)
-    minutes = days_to_sync * 24 * 60
+    minutes = window_minutes or days_to_sync * 24 * 60
 
     enabled_facilities = list(settings.get_integration_to_erpnext_wh_mapping().keys())
     enabled_channels = frappe.db.get_list("Unicommerce Channel", filters={"enabled": 1}, pluck="channel_id")

@@ -54,6 +54,11 @@ scheduler_events = {
         "*/5 * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
             "alaiy_os_connector_unicommerce.unicommerce.inventory.pull.pull_inventory_from_unicommerce",
+            # Recent status changes (cancel, dispatch, delivered, return) every
+            # 5 minutes instead of waiting for the hourly poll. Short windows,
+            # so each run is two searches; the hourly runs stay as the net.
+            "alaiy_os_connector_unicommerce.unicommerce.order.status.poll_recent_order_status",
+            "alaiy_os_connector_unicommerce.unicommerce.order.status.poll_recent_shipping_status",
         ],
     },
     "daily_long": [
