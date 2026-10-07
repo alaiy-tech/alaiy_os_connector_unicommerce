@@ -172,7 +172,7 @@ def setup_custom_fields():
         FACILITY_CODE_FIELD, GRN_CODE_FIELD, GRN_RAW_JSON_FIELD, GRN_SYNCED_AT_FIELD,
         ITEM_SHIPPING_CHARGE_FIELD, ITEM_RETURN_REASON_FIELD, ITEM_RETURN_QC_FIELD,
         INVOICE_CODE_FIELD, IS_COD_CHECKBOX, MANIFEST_GENERATED_CHECK, ORDER_CODE_FIELD,
-        ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
+        ORDER_DELIVERED_ON_FIELD, ORDER_DISPLAY_CODE_FIELD, ORDER_INVOICE_STATUS_FIELD, ORDER_ITEM_BATCH_NO,
         ORDER_ITEM_CODE_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, PACKAGE_TYPE_FIELD, PO_CODE_FIELD, PO_STATUS_FIELD,
         PO_CURRENCY_FIELD, PO_ITEM_PENDING_QTY_FIELD, PO_ITEM_RECEIVED_QTY_FIELD,
         PO_ITEM_SKU_FIELD, PO_RAW_JSON_FIELD, PO_SYNCED_AT_FIELD,
@@ -314,6 +314,9 @@ def setup_custom_fields():
                  in_list_view=1, in_standard_filter=1,
                  description="Populated directly from Unicommerce shipping package status, independent of "
                              "whether this order has a local Sales Invoice yet."),
+            dict(fieldname=ORDER_DELIVERED_ON_FIELD, label="Unicommerce Delivered On", fieldtype="Datetime",
+                 insert_after=ORDER_SHIPMENT_STATUS_FIELD, read_only=1,
+                 description="When Unicommerce reports the shipment delivered."),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
                  options="Unicommerce Package Type", insert_after=ORDER_INVOICE_STATUS_FIELD, allow_on_submit=1),
             dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",

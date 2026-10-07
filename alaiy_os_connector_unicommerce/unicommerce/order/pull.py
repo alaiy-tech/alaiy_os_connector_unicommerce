@@ -239,7 +239,7 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
     from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import INVOICED_STATE, create_sales_invoice
 
     facility_code = sales_order.get(FACILITY_CODE_FIELD)
-    mirror_eligible_states = INVOICED_STATE + ["RETURNED", "RETURN_EXPECTED"]
+    mirror_eligible_states = INVOICED_STATE + ["RETURNED", "RETURN_EXPECTED", "RETURN_ACKNOWLEDGED"]
     packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in mirror_eligible_states]
     for package in packages:
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)

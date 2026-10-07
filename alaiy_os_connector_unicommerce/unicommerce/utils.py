@@ -72,6 +72,31 @@ def get_unicommerce_date(timestamp: int) -> datetime.date:
     return moment.astimezone(timezone(get_system_timezone())).date()
 
 
+def get_unicommerce_datetime(value) -> datetime.datetime | None:
+    """A Unicommerce timestamp as a naive datetime in the SITE's timezone, or
+    None when it is blank or not understood.
+
+    Accepts epoch milliseconds, which is what order payloads carry, and an ISO
+    8601 string, which is what some documentation samples show -- so a delivery
+    date is stored whichever one a given endpoint returns, and never breaks the
+    status poll that is reading it."""
+    from frappe.utils import get_system_timezone
+    from pytz import timezone
+
+    if value in (None, ""):
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            moment = datetime.datetime.fromtimestamp(value / 1000, tz=datetime.timezone.utc)
+        else:
+            moment = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=datetime.timezone.utc)
+        return moment.astimezone(timezone(get_system_timezone())).replace(tzinfo=None)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
 def remove_non_alphanumeric_chars(filename: str) -> str:
     return "".join(c for c in filename if c.isalpha() or c.isdigit()).strip()
 
