@@ -24,7 +24,7 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     CHANNEL_ID_FIELD, CUSTOMER_SHIPPING_CHARGE_FIELD, FACILITY_CODE_FIELD, INVOICE_CODE_FIELD,
     IS_COD_CHECKBOX, ITEM_EXTERNAL_ID_FIELD, ITEM_SHIPPING_CHARGE_FIELD, ORDER_CODE_FIELD,
     ORDER_INVOICE_STATUS_FIELD, SETTINGS_DOCTYPE, SHIPPING_METHOD_FIELD,
-    SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD,
+    SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE, TRACKING_CODE_FIELD, TRACKING_LINK_FIELD,
 )
 from alaiy_os_connector_unicommerce.unicommerce.order.pull import get_item_shipping_charge, get_taxes
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
@@ -273,6 +273,7 @@ def create_sales_invoice(
     si.set(SHIPPING_PACKAGE_CODE_FIELD, shipping_package_code)
     si.set(SHIPPING_PROVIDER_CODE, shipping_provider_code)
     si.set(TRACKING_CODE_FIELD, tracking_no)
+    si.set(TRACKING_LINK_FIELD, invoice_response.get("trackingLink") or shipping_package_info.get("trackingLink"))
     si.set(IS_COD_CHECKBOX, so_data.get("cod"))
     si.set(SHIPPING_METHOD_FIELD, shipping_package_info.get("shippingMethod"))
     si.set(SHIPPING_PACKAGE_STATUS_FIELD, shipping_package_status)
@@ -489,6 +490,7 @@ def fetch_pdf_as_base64(link):
         response.raise_for_status()
         return base64.b64encode(response.content)
     except Exception:
+        frappe.log_error(title="Unicommerce: PDF download failed", message=frappe.get_traceback())
         return
 
 

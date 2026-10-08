@@ -1,0 +1,97 @@
+# Copyright (c) 2026, Alaiy and contributors
+# For license information, please see license.txt
+"""Airway bill (tracking number), courier and tracking link from Unicommerce
+shipping packages onto the Sales Order and its Sales Invoices.
+
+The package search used by the frequent status poll returns the tracking number
+and courier but not the tracking link; the link only comes with the full sale
+order (or package details), so the poll fetches the full order for the few
+orders whose stored values differ."""
+
+import frappe
+
+from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
+from alaiy_os_connector_unicommerce.unicommerce.constants import (
+    ORDER_CODE_FIELD,
+    SHIPPING_PACKAGE_CODE_FIELD,
+    SHIPPING_PROVIDER_CODE,
+    TRACKING_CODE_FIELD,
+    TRACKING_LINK_FIELD,
+)
+
+TRACKING_FIELDS = [TRACKING_CODE_FIELD, TRACKING_LINK_FIELD, SHIPPING_PROVIDER_CODE]
+
+#: Full-order fetches one poll run may spend on tracking. Only orders whose
+#: stored tracking differs from what Unicommerce reports are fetched, so a
+#: backlog clears over a few runs instead of one long one.
+TRACKING_FETCHES_PER_RUN = 25
+
+
+def package_tracking(package):
+    return {
+        TRACKING_CODE_FIELD: package.get("trackingNumber"),
+        TRACKING_LINK_FIELD: package.get("trackingLink"),
+        SHIPPING_PROVIDER_CODE: (
+            package.get("shippingProvider") or package.get("shippingProviderCode") or package.get("shippingCourier")
+        ),
+    }
+
+
+def _write(doctype, name, current, values):
+    # Only real values, only when different: an empty value from Unicommerce
+    # never wipes what is already stored.
+    changed = {k: v for k, v in values.items() if v and (current or {}).get(k) != v}
+    if changed:
+        frappe.db.set_value(doctype, name, changed)
+
+
+def apply_order_tracking(so_name, so_data):
+    """Write tracking from a full sale order payload onto the Sales Order (its
+    furthest-along package that has an airway bill) and onto each Sales
+    Invoice, by shipping package."""
+    from alaiy_os_connector_unicommerce.unicommerce.order.status import SHIPMENT_STATUS_RANK
+
+    packages = [p for p in so_data.get("shippingPackages") or [] if p.get("trackingNumber")]
+    if not packages:
+        return
+
+    best = max(packages, key=lambda p: SHIPMENT_STATUS_RANK.get(p.get("status"), 0))
+    current = frappe.db.get_value("Sales Order", so_name, TRACKING_FIELDS, as_dict=True)
+    _write("Sales Order", so_name, current, package_tracking(best))
+
+    by_code = {p["code"]: p for p in packages}
+    invoices = frappe.db.get_values(
+        "Sales Invoice", {SHIPPING_PACKAGE_CODE_FIELD: ("in", list(by_code))},
+        fieldname=["name", SHIPPING_PACKAGE_CODE_FIELD, *TRACKING_FIELDS], as_dict=True,
+    )
+    for invoice in invoices:
+        _write("Sales Invoice", invoice["name"], invoice, package_tracking(by_code[invoice[SHIPPING_PACKAGE_CODE_FIELD]]))
+
+
+def refresh_tracking_from_packages(packages, client):
+    """Status poll: for orders whose package now carries a tracking number
+    that is not stored yet (or whose link is still missing), fetch the full
+    order and apply its tracking."""
+    reported = {
+        p["saleOrderCode"]: p["trackingNumber"] for p in packages if p.get("trackingNumber") and p.get("saleOrderCode")
+    }
+    if not reported:
+        return
+
+    orders = frappe.db.get_values(
+        "Sales Order", {ORDER_CODE_FIELD: ("in", list(reported))},
+        fieldname=["name", ORDER_CODE_FIELD, TRACKING_CODE_FIELD, TRACKING_LINK_FIELD], as_dict=True,
+    )
+    stale = [
+        o for o in orders
+        if not o.get(TRACKING_LINK_FIELD) or o.get(TRACKING_CODE_FIELD) != reported[o[ORDER_CODE_FIELD]]
+    ]
+    for order in stale[:TRACKING_FETCHES_PER_RUN]:
+        try:
+            so_data = get_sales_order(client, order[ORDER_CODE_FIELD])
+            if so_data:
+                apply_order_tracking(order["name"], so_data)
+        except Exception:
+            frappe.log_error(
+                title=f"Unicommerce: tracking refresh failed for {order['name']}", message=frappe.get_traceback()
+            )

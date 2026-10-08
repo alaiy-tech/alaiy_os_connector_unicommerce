@@ -12,6 +12,7 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     ORDER_CODE_FIELD, ORDER_DELIVERED_ON_FIELD, ORDER_SHIPMENT_STATUS_FIELD, ORDER_STATUS_FIELD, SETTINGS_DOCTYPE,
     SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD,
 )
+from alaiy_os_connector_unicommerce.unicommerce.order.tracking import apply_order_tracking, refresh_tracking_from_packages
 from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_datetime
 from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import (
     check_and_update_customer_initiated_returns, create_rto_return, fully_cancel_orders,
@@ -200,6 +201,10 @@ def update_shipping_package_status(window_minutes: int | None = None):
 
         _update_package_status_fields(valid_packages)
         _track_order_shipment_status(valid_packages)
+        try:
+            refresh_tracking_from_packages(valid_packages, client)
+        except Exception:
+            frappe.log_error(title="Unicommerce: tracking refresh failed", message=frappe.get_traceback())
 
         returning_packages = [p for p in valid_packages if p["status"] in SHIPMENT_RETURN_STATES]
         for package in returning_packages:
@@ -384,6 +389,8 @@ def _apply_stale_order(so_name, so_data, client):
     status = so_data.get("status")
     if status:
         frappe.db.set_value("Sales Order", so_name, ORDER_STATUS_FIELD, status)
+
+    apply_order_tracking(so_name, so_data)
 
     if status == "CANCELLED":
         fully_cancel_orders([so_data["code"]])

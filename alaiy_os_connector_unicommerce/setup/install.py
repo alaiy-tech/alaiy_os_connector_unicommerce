@@ -172,7 +172,7 @@ def setup_custom_fields():
         PICKLIST_ORDER_DETAILS_FIELD, RETURN_CODE_FIELD, RETURN_COURIER_FIELD,
         RETURN_PINCODE_FIELD, RETURN_REASON_FIELD, RETURN_TYPE_FIELD, SHIPPING_METHOD_FIELD,
         SHIPPING_PACKAGE_CODE_FIELD, SHIPPING_PACKAGE_STATUS_FIELD, SHIPPING_PROVIDER_CODE,
-        TRACKING_CODE_FIELD, UNICOMMERCE_SHIPPING_ID, VENDOR_CODE_FIELD,
+        TRACKING_CODE_FIELD, TRACKING_LINK_FIELD, UNICOMMERCE_SHIPPING_ID, VENDOR_CODE_FIELD,
     )
 
     item_fields = [
@@ -314,6 +314,12 @@ def setup_custom_fields():
             dict(fieldname=ORDER_DELIVERED_ON_FIELD, label="Unicommerce Delivered On", fieldtype="Datetime",
                  insert_after=ORDER_SHIPMENT_STATUS_FIELD, read_only=1,
                  description="When Unicommerce reports the shipment delivered."),
+            dict(fieldname=SHIPPING_PROVIDER_CODE, label="Unicommerce Shipping Provider", fieldtype="Small Text",
+                 insert_after=ORDER_DELIVERED_ON_FIELD, read_only=1),
+            dict(fieldname=TRACKING_CODE_FIELD, label="Unicommerce Tracking Code", fieldtype="Small Text",
+                 insert_after=SHIPPING_PROVIDER_CODE, read_only=1),
+            dict(fieldname=TRACKING_LINK_FIELD, label="Unicommerce Tracking Link", fieldtype="Small Text",
+                 insert_after=TRACKING_CODE_FIELD, read_only=1),
             dict(fieldname=PACKAGE_TYPE_FIELD, label="Unicommerce Package Type", fieldtype="Link",
                  options="Unicommerce Package Type", insert_after=ORDER_INVOICE_STATUS_FIELD, allow_on_submit=1),
             dict(fieldname=CUSTOMER_SHIPPING_CHARGE_FIELD, label="Unicommerce Customer Shipping Charge",
@@ -363,8 +369,10 @@ def setup_custom_fields():
                  insert_after=SHIPPING_PROVIDER_CODE, read_only=1),
             dict(fieldname=TRACKING_CODE_FIELD, label="Unicommerce Tracking Code", fieldtype="Small Text",
                  insert_after=SHIPPING_METHOD_FIELD, read_only=1),
+            dict(fieldname=TRACKING_LINK_FIELD, label="Unicommerce Tracking Link", fieldtype="Small Text",
+                 insert_after=TRACKING_CODE_FIELD, read_only=1),
             dict(fieldname=SHIPPING_PACKAGE_STATUS_FIELD, label="Unicommerce Package Status",
-                 fieldtype="Small Text", insert_after=TRACKING_CODE_FIELD, read_only=1),
+                 fieldtype="Small Text", insert_after=TRACKING_LINK_FIELD, read_only=1),
             dict(fieldname=MANIFEST_GENERATED_CHECK, label="Manifest generated", fieldtype="Check",
                  insert_after=SHIPPING_PACKAGE_STATUS_FIELD, read_only=1),
             dict(fieldname=IS_COD_CHECKBOX, label="Is COD?", fieldtype="Check",
