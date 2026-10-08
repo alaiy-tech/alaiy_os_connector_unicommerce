@@ -468,6 +468,11 @@ def setup_custom_fields():
         ],
     }
 
+    from alaiy_os_connector_unicommerce.unicommerce.order.details import custom_field_defs
+
+    for doctype, defs in custom_field_defs().items():
+        custom_fields.setdefault(doctype, []).extend(defs)
+
     create_custom_fields(custom_sections, update=False)
     create_custom_fields(custom_fields, update=False)
 

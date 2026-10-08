@@ -18,8 +18,13 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     TRACKING_CODE_FIELD,
     TRACKING_LINK_FIELD,
 )
+from alaiy_os_connector_unicommerce.unicommerce.order.details import (
+    PACKAGE_FIELDS,
+    apply_order_details,
+    package_values,
+)
 
-TRACKING_FIELDS = [TRACKING_CODE_FIELD, TRACKING_LINK_FIELD, SHIPPING_PROVIDER_CODE]
+TRACKING_FIELDS = [TRACKING_CODE_FIELD, TRACKING_LINK_FIELD, SHIPPING_PROVIDER_CODE, *[f[0] for f in PACKAGE_FIELDS]]
 
 #: Full-order fetches one poll run may spend on tracking. Only orders whose
 #: stored tracking differs from what Unicommerce reports are fetched, so a
@@ -29,6 +34,7 @@ TRACKING_FETCHES_PER_RUN = 25
 
 def package_tracking(package):
     return {
+        **package_values(package),
         TRACKING_CODE_FIELD: package.get("trackingNumber"),
         TRACKING_LINK_FIELD: package.get("trackingLink"),
         SHIPPING_PROVIDER_CODE: (
@@ -46,10 +52,13 @@ def _write(doctype, name, current, values):
 
 
 def apply_order_tracking(so_name, so_data):
-    """Write tracking from a full sale order payload onto the Sales Order (its
-    furthest-along package that has an airway bill) and onto each Sales
-    Invoice, by shipping package."""
+    """Refresh the order and line details of a Sales Order from a full sale
+    order payload, then write tracking and shipment details onto the Sales
+    Order (its furthest-along package that has an airway bill) and onto each
+    Sales Invoice, by shipping package."""
     from alaiy_os_connector_unicommerce.unicommerce.order.status import SHIPMENT_STATUS_RANK
+
+    apply_order_details(so_name, so_data)
 
     packages = [p for p in so_data.get("shippingPackages") or [] if p.get("trackingNumber")]
     if not packages:
@@ -95,3 +104,79 @@ def refresh_tracking_from_packages(packages, client):
             frappe.log_error(
                 title=f"Unicommerce: tracking refresh failed for {order['name']}", message=frappe.get_traceback()
             )
+
+
+#: Orders one hourly run fetches in full. Newest first, so recent orders are
+#: complete first and older history fills in over the following days.
+MISSING_DETAILS_BATCH = 50
+
+_SHIPPED_STATUSES = (
+    "DISPATCHED", "SHIPPED", "DELIVERED", "RETURN_EXPECTED", "RETURNED", "RETURN_ACKNOWLEDGED",
+)
+
+
+def fill_missing_order_details():
+    """Hourly background fill. Fetches the full order for every Sales Order
+    whose details were never applied, plus shipped orders that still have no
+    airway bill (re-checked at most once a day), and applies them through the
+    same path as the live poll. Bounded and resumable: it commits per order
+    and a failed fetch is simply retried on a later run."""
+    from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
+    from alaiy_os_connector_unicommerce.unicommerce.constants import (
+        ORDER_SHIPMENT_STATUS_FIELD,
+        ORDER_STATUS_FIELD,
+        SETTINGS_DOCTYPE,
+    )
+    from alaiy_os_connector_unicommerce.unicommerce.order.details import DETAILS_SYNCED_FIELD
+
+    if not frappe.get_cached_doc(SETTINGS_DOCTYPE).is_enabled:
+        return {"skipped": "connector not enabled"}
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT name, `{ORDER_CODE_FIELD}` AS order_code
+        FROM `tabSales Order`
+        WHERE docstatus = 1
+          AND COALESCE(`{ORDER_CODE_FIELD}`, '') != ''
+          AND COALESCE(`{ORDER_STATUS_FIELD}`, '') != 'CANCELLED'
+          AND (
+            `{DETAILS_SYNCED_FIELD}` IS NULL
+            OR (
+              COALESCE(`{TRACKING_CODE_FIELD}`, '') = ''
+              AND `{ORDER_SHIPMENT_STATUS_FIELD}` IN %(shipped)s
+              AND `{DETAILS_SYNCED_FIELD}` < DATE_SUB(NOW(), INTERVAL 1 DAY)
+            )
+          )
+        ORDER BY creation DESC
+        LIMIT %(batch)s
+        """,
+        {"shipped": _SHIPPED_STATUSES, "batch": MISSING_DETAILS_BATCH},
+        as_dict=True,
+    )
+    if not rows:
+        return {"orders": 0, "filled": 0, "failed": 0}
+
+    client = UnicommerceClient()
+    filled = failed = 0
+    for row in rows:
+        try:
+            so_data = get_sales_order(client, row.order_code)
+            if not so_data:
+                failed += 1
+                continue
+            apply_order_tracking(row.name, so_data)
+            filled += 1
+            frappe.db.commit()
+        except Exception:
+            failed += 1
+            frappe.db.rollback()
+            frappe.log_error(
+                title=f"Unicommerce: filling order details failed for {row.name}", message=frappe.get_traceback()
+            )
+
+    if failed == len(rows):
+        frappe.log_error(
+            title="Unicommerce: no order details could be fetched",
+            message="Every full-order fetch in this run came back empty or failed; check the API user's access.",
+        )
+    return {"orders": len(rows), "filled": filled, "failed": failed}

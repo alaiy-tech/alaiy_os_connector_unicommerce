@@ -24,6 +24,7 @@ from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
     discover_channels, get_configured_channels, report_skipped,
 )
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
+from alaiy_os_connector_unicommerce.unicommerce.order.details import item_values, order_values
 from alaiy_os_connector_unicommerce.unicommerce.channel_listing import fill_from_order
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
@@ -402,6 +403,7 @@ def _create_order(order: UnicommerceOrder, customer):
         "dispatch_address_name": dispatch_address,
         "currency": order.get("currencyCode"),
         CUSTOMER_SHIPPING_CHARGE_FIELD: get_order_shipping_charge(order),
+        **order_values(order),
     })
 
     so.flags.ignore_permissions = True
@@ -441,6 +443,7 @@ def _get_line_items(line_items: list, default_warehouse: str | None = None, is_c
             ORDER_ITEM_STATUS_FIELD: item.get("statusCode"),
             ORDER_ITEM_BATCH_NO: _get_batch_no(item),
             ITEM_SHIPPING_CHARGE_FIELD: get_item_shipping_charge(item),
+            **item_values(item),
         })
     return so_items
 
