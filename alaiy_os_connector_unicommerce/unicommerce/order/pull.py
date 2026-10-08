@@ -81,6 +81,9 @@ def sync_new_orders(client: UnicommerceClient = None, force: bool = False):
 
 
 FULL_WINDOW_MINUTES = 24 * 60
+#: How long a package whose invoice could not be read waits before the pull asks again.
+INVOICE_RETRY_SECONDS = 60 * 60
+INVOICE_RETRY_KEY = "unicommerce_invoice_retry"
 #: Slack added to the time since the last run, so an order updated just before
 #: that run started is still inside the narrow window of the next one.
 CHANGED_WINDOW_BUFFER_MINUTES = 10
@@ -246,8 +249,14 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
     mirror_eligible_states = INVOICED_STATE + ["RETURNED", "RETURN_EXPECTED", "RETURN_ACKNOWLEDGED"]
     packages = [p for p in unicommerce_order["shippingPackages"] if p.get("status") in mirror_eligible_states]
     for package in packages:
+        retry_key = f"{INVOICE_RETRY_KEY}:{package['code']}"
+        if frappe.cache().get_value(retry_key):
+            continue
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)
         if not invoice_data or not invoice_data.get("invoice"):
+            # Retried once an hour, not on every pull: a package whose invoice cannot be read (missing
+            # permission, or not invoiced yet) used to cost an API call and an Error Log row every cycle.
+            frappe.cache().set_value(retry_key, 1, expires_in_sec=INVOICE_RETRY_SECONDS)
             # get_sales_invoice returns None on any API failure (e.g. the
             # account's Unicommerce API credentials lacking the invoice
             # detail resource scope) without logging anything itself --
