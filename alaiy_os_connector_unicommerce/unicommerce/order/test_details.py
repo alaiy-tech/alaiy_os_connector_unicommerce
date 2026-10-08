@@ -65,4 +65,6 @@ class TestDetails(unittest.TestCase):
         for doctype in ("Sales Order", "Sales Order Item", "Sales Invoice"):
             names = [d["fieldname"] for d in defs[doctype]]
             self.assertEqual(len(names), len(set(names)), doctype)
-        self.assertIn("unicommerce_customer_gstin", [d["fieldname"] for d in defs["Sales Order"]])
+        order_fields = [d["fieldname"] for d in defs["Sales Order"]]
+        self.assertIn("unicommerce_customer_gstin", order_fields)
+        self.assertIn("unicommerce_details_attempted_at", order_fields)
