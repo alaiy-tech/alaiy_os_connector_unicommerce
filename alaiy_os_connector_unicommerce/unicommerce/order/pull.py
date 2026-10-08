@@ -25,6 +25,7 @@ from alaiy_os_connector_unicommerce.unicommerce.channel_discovery import (
 )
 from alaiy_os_connector_unicommerce.unicommerce.customer import sync_customer
 from alaiy_os_connector_unicommerce.unicommerce.order.details import item_values, order_values
+from alaiy_os_connector_unicommerce.unicommerce.order.tracking import apply_order_tracking
 from alaiy_os_connector_unicommerce.unicommerce.channel_listing import fill_from_order
 from alaiy_os_connector_unicommerce.unicommerce.product.pull import import_product_from_unicommerce
 from alaiy_os_connector_unicommerce.unicommerce.utils import (
@@ -302,6 +303,15 @@ def create_order(payload: UnicommerceOrder, request_id: str | None = None, clien
             if placed_at:
                 so.db_set(ORDER_PLACED_AT_FIELD, placed_at, update_modified=False)
         _sync_item_statuses(so.name, order)
+        # The full order is already in hand here, so its tracking and details are
+        # refreshed without another API call.
+        try:
+            apply_order_tracking(so.name, order)
+        except Exception:
+            # A refresh problem must never stop the rest of the pull.
+            frappe.log_error(
+                title=f"Unicommerce: tracking refresh failed for {so.name}", message=frappe.get_traceback()
+            )
         return so
 
     if client is None:
