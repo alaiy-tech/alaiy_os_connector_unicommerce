@@ -14,6 +14,8 @@ from frappe.utils import now_datetime
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
     ORDER_CODE_FIELD,
+    ORDER_DELIVERED_ON_FIELD,
+    ORDER_SHIPMENT_STATUS_FIELD,
     SHIPPING_PACKAGE_CODE_FIELD,
     SHIPPING_PROVIDER_CODE,
     TRACKING_CODE_FIELD,
@@ -24,6 +26,7 @@ from alaiy_os_connector_unicommerce.unicommerce.order.details import (
     apply_order_details,
     package_values,
 )
+from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_datetime
 
 TRACKING_FIELDS = [TRACKING_CODE_FIELD, TRACKING_LINK_FIELD, SHIPPING_PROVIDER_CODE, *[f[0] for f in PACKAGE_FIELDS]]
 
@@ -61,13 +64,29 @@ def apply_order_tracking(so_name, so_data):
 
     apply_order_details(so_name, so_data)
 
-    packages = [p for p in so_data.get("shippingPackages") or [] if p.get("trackingNumber")]
+    # Every package counts, not only ones with an airway bill: the amount to
+    # collect, weights and statuses exist from the moment a package is created.
+    packages = [p for p in so_data.get("shippingPackages") or [] if p.get("code")]
     if not packages:
         return
 
-    best = max(packages, key=lambda p: SHIPMENT_STATUS_RANK.get(p.get("status"), 0))
-    current = frappe.db.get_value("Sales Order", so_name, TRACKING_FIELDS, as_dict=True)
-    _write("Sales Order", so_name, current, package_tracking(best))
+    def rank(package):
+        return SHIPMENT_STATUS_RANK.get(package.get("status"), 0)
+
+    furthest = max(packages, key=rank)
+    # The Sales Order shows the furthest package that has an airway bill, when
+    # there is one, so a tracking number is never hidden behind a package that
+    # has none yet.
+    best = max([p for p in packages if p.get("trackingNumber")] or packages, key=rank)
+
+    values = package_tracking(best)
+    values[ORDER_SHIPMENT_STATUS_FIELD] = furthest.get("status")
+    if furthest.get("status") == "DELIVERED":
+        values[ORDER_DELIVERED_ON_FIELD] = get_unicommerce_datetime(furthest.get("delivered"))
+    current = frappe.db.get_value(
+        "Sales Order", so_name, [*TRACKING_FIELDS, ORDER_SHIPMENT_STATUS_FIELD, ORDER_DELIVERED_ON_FIELD], as_dict=True
+    )
+    _write("Sales Order", so_name, current, values)
 
     by_code = {p["code"]: p for p in packages}
     invoices = frappe.db.get_values(
