@@ -47,7 +47,8 @@ def _cancelled_lines(order):
 
 
 def _item_details(item):
-    rows = item.get("itemDetailFields") or []
+    # The payload carries both names; whichever one is filled holds the rows.
+    rows = item.get("itemDetailFields") or item.get("itemDetailFieldDTOList") or []
     parts = [
         f"{key}: {value}"
         for row in rows
@@ -62,6 +63,10 @@ ORDER_FIELDS = [
     ("unicommerce_customer_gstin", "Customer GSTIN", "Data", lambda o: o.get("customerGSTIN")),
     ("unicommerce_notification_email", "Notification Email", "Data", lambda o: o.get("notificationEmail")),
     ("unicommerce_notification_mobile", "Notification Mobile", "Data", lambda o: o.get("notificationMobile")),
+    ("unicommerce_order_category", "Order Category", "Data", lambda o: o.get("orderCategory")),
+    ("unicommerce_order_source", "Order Source", "Data", lambda o: o.get("source")),
+    ("unicommerce_channel_processing_time", "Channel Processing Time", "Datetime",
+     lambda o: get_unicommerce_datetime(o.get("channelProcessingTime"))),
     ("unicommerce_priority", "Fulfilment Priority", "Int", lambda o: o.get("priority")),
     ("unicommerce_additional_info", "Additional Info", "Small Text", lambda o: o.get("additionalInfo")),
     ("unicommerce_custom_values", "Custom Field Values", "Small Text", lambda o: _json(o.get("customFieldValues"))),
@@ -81,7 +86,10 @@ ORDER_FIELDS = [
 #: Per sale order line (Sales Order Item).
 ITEM_FIELDS = [
     ("unicommerce_line_mrp", "Max Retail Price", "Currency", lambda i: i.get("maxRetailPrice")),
+    ("unicommerce_line_price_before_tax_discount", "Price Before Tax and Discount", "Currency",
+     lambda i: i.get("sellingPriceWithoutTaxesAndDiscount")),
     ("unicommerce_line_discount", "Discount", "Currency", lambda i: i.get("discount")),
+    ("unicommerce_line_tcs", "TCS", "Currency", lambda i: i.get("tcs")),
     ("unicommerce_line_voucher_code", "Voucher Code", "Data", lambda i: i.get("voucherCode")),
     ("unicommerce_line_voucher_value", "Voucher Value", "Currency", lambda i: i.get("voucherValue")),
     ("unicommerce_line_store_credit", "Store Credit", "Currency", lambda i: i.get("storeCredit")),
@@ -108,6 +116,8 @@ PACKAGE_FIELDS = [
     ("unicommerce_payment_reconciled", "Payment Reconciled", "Check", lambda p: int(bool(p.get("paymentReconciled")))),
     ("unicommerce_pod_code", "Proof of Delivery Code", "Data", lambda p: p.get("podCode")),
     ("unicommerce_manifest_code", "Shipping Manifest", "Data", lambda p: p.get("shippingManifestCode")),
+    ("unicommerce_irn", "E-Invoice IRN", "Data", lambda p: p.get("irn")),
+    ("unicommerce_invoice_date", "Invoice Date", "Datetime", lambda p: get_unicommerce_datetime(p.get("invoiceDate"))),
 ]
 
 

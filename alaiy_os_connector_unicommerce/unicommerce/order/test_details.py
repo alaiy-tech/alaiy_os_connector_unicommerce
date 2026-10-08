@@ -44,6 +44,22 @@ class TestDetails(unittest.TestCase):
         self.assertEqual(values["unicommerce_payment_reconciled"], 1)
         self.assertEqual(values["unicommerce_pod_code"], "P1")
 
+    def test_serial_and_imei_read_either_payload_name(self):
+        self.assertEqual(item_values({"itemDetailFields": [{"Imei": "1"}]})["unicommerce_line_item_details"], "Imei: 1")
+        self.assertEqual(
+            item_values({"itemDetailFields": None, "itemDetailFieldDTOList": [{"SerialNumber": "S1"}]})[
+                "unicommerce_line_item_details"
+            ],
+            "SerialNumber: S1",
+        )
+
+    def test_invoice_reference_and_pre_tax_price(self):
+        self.assertEqual(package_values({"irn": "abc123"})["unicommerce_irn"], "abc123")
+        self.assertEqual(
+            item_values({"sellingPriceWithoutTaxesAndDiscount": 669.0})["unicommerce_line_price_before_tax_discount"], 669.0
+        )
+        self.assertEqual(order_values({"orderCategory": "B2C", "source": "FLIPKART"})["unicommerce_order_category"], "B2C")
+
     def test_every_field_has_a_definition(self):
         defs = custom_field_defs()
         for doctype in ("Sales Order", "Sales Order Item", "Sales Invoice"):
