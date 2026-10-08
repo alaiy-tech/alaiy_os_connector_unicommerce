@@ -82,6 +82,10 @@ scheduler_events = {
     "hourly_long": [
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_sales_order_status",
         "alaiy_os_connector_unicommerce.unicommerce.order.status.update_shipping_package_status",
+        # Full order for orders whose details (airway bill, tracking link, payment,
+        # discounts, ...) were never applied: newest first, a bounded batch per run,
+        # so history fills in the background.
+        "alaiy_os_connector_unicommerce.unicommerce.order.tracking.fill_missing_order_details",
     ],
 }
 
