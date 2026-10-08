@@ -9,7 +9,7 @@ order (or package details), so the poll fetches the full order for the few
 orders whose stored values differ."""
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
@@ -52,7 +52,9 @@ def _write(doctype, name, current, values):
     # never wipes what is already stored.
     changed = {k: v for k, v in values.items() if v and (current or {}).get(k) != v}
     if changed:
-        frappe.db.set_value(doctype, name, changed)
+        # Not a content change by a user: leave `modified` alone, so reports that read it and the
+        # stale-order sweep (oldest `modified` first) are not disturbed by a refresh.
+        frappe.db.set_value(doctype, name, changed, update_modified=False)
 
 
 def apply_order_tracking(so_name, so_data):
@@ -162,19 +164,21 @@ def fill_missing_order_details():
         WHERE docstatus = 1
           AND COALESCE(`{ORDER_CODE_FIELD}`, '') != ''
           AND COALESCE(`{ORDER_STATUS_FIELD}`, '') != 'CANCELLED'
-          AND (`{DETAILS_ATTEMPTED_FIELD}` IS NULL OR `{DETAILS_ATTEMPTED_FIELD}` < DATE_SUB(NOW(), INTERVAL 1 DAY))
+          AND (`{DETAILS_ATTEMPTED_FIELD}` IS NULL OR `{DETAILS_ATTEMPTED_FIELD}` < %(day_ago)s)
           AND (
             `{DETAILS_SYNCED_FIELD}` IS NULL
             OR (
               COALESCE(`{TRACKING_CODE_FIELD}`, '') = ''
               AND `{ORDER_SHIPMENT_STATUS_FIELD}` IN %(shipped)s
-              AND `{DETAILS_SYNCED_FIELD}` < DATE_SUB(NOW(), INTERVAL 1 DAY)
+              AND `{DETAILS_SYNCED_FIELD}` < %(day_ago)s
             )
           )
         ORDER BY (`{DETAILS_ATTEMPTED_FIELD}` IS NULL) DESC, creation DESC
         LIMIT %(batch)s
         """,
-        {"shipped": _SHIPPED_STATUSES, "batch": MISSING_DETAILS_BATCH},
+        # Computed here, in the same clock frappe stamps the fields with, not with SQL NOW() (the
+        # database server's own time zone).
+        {"shipped": _SHIPPED_STATUSES, "batch": MISSING_DETAILS_BATCH, "day_ago": add_to_date(now_datetime(), days=-1)},
         as_dict=True,
     )
     if not rows:

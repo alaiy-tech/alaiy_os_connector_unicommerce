@@ -189,7 +189,7 @@ def apply_order_details(so_name, order):
     Order from a full sale order payload (holds clear, payments reconcile)."""
     values = order_values(order)
     if values:
-        frappe.db.set_value("Sales Order", so_name, values)
+        frappe.db.set_value("Sales Order", so_name, values, update_modified=False)
 
     rows = frappe.db.get_values(
         "Sales Order Item", {"parent": so_name}, fieldname=["name", ORDER_ITEM_CODE_FIELD], as_dict=True
@@ -199,7 +199,7 @@ def apply_order_details(so_name, order):
         row = row_by_code.get(item.get("code"))
         values = item_values(item) if row else None
         if values:
-            frappe.db.set_value("Sales Order Item", row, values)
+            frappe.db.set_value("Sales Order Item", row, values, update_modified=False)
 
 
 _PERSONAL = {
