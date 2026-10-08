@@ -9,6 +9,7 @@ order (or package details), so the poll fetches the full order for the few
 orders whose stored values differ."""
 
 import frappe
+from frappe.utils import now_datetime
 
 from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
 from alaiy_os_connector_unicommerce.unicommerce.constants import (
@@ -120,14 +121,17 @@ def fill_missing_order_details():
     whose details were never applied, plus shipped orders that still have no
     airway bill (re-checked at most once a day), and applies them through the
     same path as the live poll. Bounded and resumable: it commits per order
-    and a failed fetch is simply retried on a later run."""
+    and a failed fetch is retried the next day."""
     from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
     from alaiy_os_connector_unicommerce.unicommerce.constants import (
         ORDER_SHIPMENT_STATUS_FIELD,
         ORDER_STATUS_FIELD,
         SETTINGS_DOCTYPE,
     )
-    from alaiy_os_connector_unicommerce.unicommerce.order.details import DETAILS_SYNCED_FIELD
+    from alaiy_os_connector_unicommerce.unicommerce.order.details import (
+        DETAILS_ATTEMPTED_FIELD,
+        DETAILS_SYNCED_FIELD,
+    )
 
     if not frappe.get_cached_doc(SETTINGS_DOCTYPE).is_enabled:
         return {"skipped": "connector not enabled"}
@@ -139,6 +143,7 @@ def fill_missing_order_details():
         WHERE docstatus = 1
           AND COALESCE(`{ORDER_CODE_FIELD}`, '') != ''
           AND COALESCE(`{ORDER_STATUS_FIELD}`, '') != 'CANCELLED'
+          AND (`{DETAILS_ATTEMPTED_FIELD}` IS NULL OR `{DETAILS_ATTEMPTED_FIELD}` < DATE_SUB(NOW(), INTERVAL 1 DAY))
           AND (
             `{DETAILS_SYNCED_FIELD}` IS NULL
             OR (
@@ -147,7 +152,7 @@ def fill_missing_order_details():
               AND `{DETAILS_SYNCED_FIELD}` < DATE_SUB(NOW(), INTERVAL 1 DAY)
             )
           )
-        ORDER BY creation DESC
+        ORDER BY (`{DETAILS_ATTEMPTED_FIELD}` IS NULL) DESC, creation DESC
         LIMIT %(batch)s
         """,
         {"shipped": _SHIPPED_STATUSES, "batch": MISSING_DETAILS_BATCH},
@@ -160,9 +165,13 @@ def fill_missing_order_details():
     filled = failed = 0
     for row in rows:
         try:
+            # Stamped before the fetch and committed either way, so a fetch that
+            # fails is not retried until tomorrow and cannot starve newer orders.
+            frappe.db.set_value("Sales Order", row.name, DETAILS_ATTEMPTED_FIELD, now_datetime(), update_modified=False)
             so_data = get_sales_order(client, row.order_code)
             if not so_data:
                 failed += 1
+                frappe.db.commit()
                 continue
             apply_order_tracking(row.name, so_data)
             filled += 1

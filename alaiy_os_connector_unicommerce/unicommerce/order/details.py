@@ -23,6 +23,9 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
 from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_datetime
 
 DETAILS_SYNCED_FIELD = "unicommerce_details_synced_at"
+#: When the background fill last tried this order, successful or not, so an order Unicommerce cannot
+#: return is retried daily instead of blocking the front of the queue every hour.
+DETAILS_ATTEMPTED_FIELD = "unicommerce_details_attempted_at"
 
 
 def _join(values):
@@ -152,10 +155,13 @@ def _definitions(table, after, section_label=None):
 
 def custom_field_defs():
     """Custom Field definitions for setup/install.py, keyed by doctype."""
+    attempted = dict(fieldname=DETAILS_ATTEMPTED_FIELD, label="Details Last Attempted At", fieldtype="Datetime",
+                     insert_after=DETAILS_SYNCED_FIELD, read_only=1, hidden=1)
     return {
         "Sales Order": (
             _definitions(ORDER_FIELDS, TRACKING_LINK_FIELD, "Unicommerce Order Details")
             + _definitions(PACKAGE_FIELDS, ORDER_FIELDS[-1][0], "Unicommerce Shipment Details")
+            + [attempted]
         ),
         "Sales Order Item": _definitions(ITEM_FIELDS, ITEM_SHIPPING_CHARGE_FIELD),
         "Sales Invoice": _definitions(PACKAGE_FIELDS, SHIPPING_PACKAGE_STATUS_FIELD),
