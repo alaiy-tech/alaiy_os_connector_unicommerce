@@ -52,10 +52,15 @@ def _cancelled_lines(order):
 def _item_details(item):
     # The payload carries both names; whichever one is filled holds the rows.
     rows = item.get("itemDetailFields") or item.get("itemDetailFieldDTOList") or []
+    if isinstance(rows, dict):
+        rows = [rows]
+    # Only key/value rows carry values. A plain string in this list is a field
+    # name from the item's configuration, not a serial number or IMEI.
     parts = [
         f"{key}: {value}"
         for row in rows
-        for key, value in (row or {}).items()
+        if isinstance(row, dict)
+        for key, value in row.items()
         if value
     ]
     return "; ".join(parts) or None
@@ -125,7 +130,18 @@ PACKAGE_FIELDS = [
 
 
 def _values(table, source):
-    return {name: value for name, _l, _t, get in table if (value := get(source)) not in (None, "")}
+    values = {}
+    for name, _label, _fieldtype, get in table:
+        # One field in an unexpected shape must not cost the order every other
+        # field: skip it and keep going.
+        try:
+            value = get(source)
+        except Exception:
+            frappe.logger("unicommerce").warning(f"order detail {name} skipped: {frappe.get_traceback()}")
+            continue
+        if value not in (None, ""):
+            values[name] = value
+    return values
 
 
 def order_values(order):

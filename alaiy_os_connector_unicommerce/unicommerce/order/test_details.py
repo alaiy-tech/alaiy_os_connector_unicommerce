@@ -53,6 +53,13 @@ class TestDetails(unittest.TestCase):
             "SerialNumber: S1",
         )
 
+    def test_odd_item_detail_shapes_do_not_break_the_order(self):
+        for rows in (["Imei", "SerialNumber"], "Imei", {"Imei": "9"}, [None, 5], []):
+            values = item_values({"itemDetailFieldDTOList": rows, "discount": 5})
+            self.assertEqual(values["unicommerce_line_discount"], 5)
+        self.assertEqual(item_values({"itemDetailFields": {"Imei": "9"}})["unicommerce_line_item_details"], "Imei: 9")
+        self.assertNotIn("unicommerce_line_item_details", item_values({"itemDetailFieldDTOList": ["Imei"]}))
+
     def test_invoice_reference_and_pre_tax_price(self):
         self.assertEqual(package_values({"irn": "abc123"})["unicommerce_irn"], "abc123")
         self.assertEqual(
