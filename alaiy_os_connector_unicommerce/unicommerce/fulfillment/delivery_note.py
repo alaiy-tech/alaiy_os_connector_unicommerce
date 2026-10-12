@@ -12,12 +12,22 @@ from alaiy_os_connector_unicommerce.unicommerce.constants import (
     UNICOMMERCE_SHIPPING_ID,
 )
 
-#: A package at or past this point has definitely left the warehouse --
-#: DISPATCHED is what the routine 5-minute job catches at the moment it
-#: happens; by the time a stale order is old enough for the catch-up below
-#: to reach it, the same package may already show DELIVERED. Either one is
-#: still a real, un-recorded shipment.
-DISPATCHED_OR_LATER = ("DISPATCHED", "DELIVERED")
+#: Package statuses at or past the moment a shipment leaves the warehouse.
+#: A Delivery Note records that departure, so it is owed for every one of
+#: them, not only while a package is exactly DISPATCHED. The routine
+#: 5-minute job sees a package at whatever status it has reached by then, and
+#: a fast courier or a marketplace-managed pickup moves it past DISPATCHED
+#: within minutes; a returned package shipped too. Statuses before dispatch
+#: (CREATED, PICKING, PICKED, PACKED, READY_TO_SHIP, MANIFESTED) and CANCELLED
+#: are deliberately absent: nothing has left yet, or nothing will.
+SHIPPED_STATES = (
+    "DISPATCHED", "SHIPPED", "DELIVERED", "RETURN_EXPECTED", "RETURNED", "RETURN_ACKNOWLEDGED",
+)
+
+
+def is_shipped(status: str | None) -> bool:
+    return status in SHIPPED_STATES
+
 
 #: Same reasoning as order/status.py's STALE_ORDER_BATCH/STALE_ORDER_DAYS:
 #: a fixed batch of the oldest candidates per day, old enough that the
@@ -80,7 +90,7 @@ def prepare_delivery_note(days_to_sync_override: int | None = None):
             continue
 
         valid_packages = [p for p in updated_packages if p.get("channel") in enabled_channels]
-        shipped_packages = [p for p in valid_packages if p["status"] == "DISPATCHED"]
+        shipped_packages = [p for p in valid_packages if is_shipped(p.get("status"))]
 
         for order in shipped_packages:
             try:
@@ -187,9 +197,7 @@ def catch_up_on_stale_deliveries():
     for row in candidates:
         try:
             so_data = get_sales_order(client, row.order_code)
-            if so_data and any(
-                p.get("status") in DISPATCHED_OR_LATER for p in so_data.get("shippingPackages", [])
-            ):
+            if so_data and any(is_shipped(p.get("status")) for p in so_data.get("shippingPackages", [])):
                 sales_order = frappe.get_doc("Sales Order", row.so_name)
                 sales_invoice = frappe.get_doc(
                     "Sales Invoice", {ORDER_CODE_FIELD: row.order_code, "is_return": 0, "docstatus": 1}
