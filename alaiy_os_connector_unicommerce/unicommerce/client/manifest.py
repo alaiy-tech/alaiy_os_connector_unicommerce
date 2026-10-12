@@ -2,11 +2,13 @@
 # For license information, please see license.txt
 """Shipping package + manifest endpoints. Ref: https://documentation.unicommerce.com/"""
 
+import frappe
 from frappe.utils import cint
 
-#: Matches `order.sync_old_orders`'s PAGE_SIZE for the sibling saleOrder/search
-#: endpoint — same OMS search family, same `searchOptions` pagination shape.
-SHIPPING_PACKAGE_PAGE_SIZE = 1000
+#: Largest `displayLength` the shippingPackage/search endpoint accepts. A
+#: larger value is rejected, and a rejected request used to be read as "no
+#: packages", so every caller silently saw an empty result.
+SHIPPING_PACKAGE_PAGE_SIZE = 500
 
 
 def update_shipping_package(
@@ -119,6 +121,12 @@ def search_shipping_packages(
             headers={"Facility": facility_code},
         )
         if not ok or not search_results:
+            # An empty result and a failed request must not look the same:
+            # callers treat [] as "nothing to do".
+            frappe.log_error(
+                title=f"Unicommerce: shipping package search failed for facility {facility_code}",
+                message=f"displayStart={display_start} displayLength={SHIPPING_PACKAGE_PAGE_SIZE} ok={ok}",
+            )
             break
 
         if display_start == 0:
