@@ -3,9 +3,13 @@
 ## Delivery Note — `unicommerce/fulfillment/delivery_note.py`
 
 Every 5 minutes, guarded by the `delivery_note` checkbox on Settings. Polls
-`DISPATCHED` shipping packages, skips if a Delivery Note already exists for
-that shipment or the Sales Order/Invoice isn't found locally yet, then
-creates the Delivery Note from the Sales Order.
+shipping packages that have left the warehouse (`SHIPPED_STATES`: `DISPATCHED`,
+`SHIPPED`, `DELIVERED`, and the return states `RETURN_EXPECTED`, `RETURNED`,
+`RETURN_ACKNOWLEDGED`), skips if a Delivery Note already exists for that
+shipment or the Sales Order/Invoice isn't found locally yet, then creates the
+Delivery Note from the Sales Order. A package is matched at whatever status it
+has reached when the job sees it, so it is not limited to the moment it is
+exactly `DISPATCHED`. The daily stale-delivery catch-up uses the same set.
 
 ## Invoice — `unicommerce/fulfillment/invoice.py`
 
