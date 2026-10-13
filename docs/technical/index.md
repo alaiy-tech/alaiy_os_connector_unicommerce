@@ -16,3 +16,4 @@ new client onto this connector. For a plain-English overview see
 10. [Channel cloning runbook](10-channel-cloning-runbook.md) — copying channel setup to a new site
 11. [Self-heal patterns](11-self-heal-patterns.md) — every idempotent fix baked into the connector
 12. [Error visibility](12-error-visibility.md) — where failures actually show up
+13. [Push notifications (NSM)](13-nsm-notifications.md) — Unicommerce calling us on cancel, dispatch, delivery and return

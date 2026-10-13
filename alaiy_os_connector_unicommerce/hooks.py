@@ -54,9 +54,13 @@ scheduler_events = {
         "*/5 * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
             "alaiy_os_connector_unicommerce.unicommerce.inventory.pull.pull_inventory_from_unicommerce",
-            # Recent status changes (cancel, dispatch, delivered, return) every
-            # 5 minutes instead of waiting for the hourly poll. Short windows,
-            # so each run is two searches; the hourly runs stay as the net.
+        ],
+        # Recent status changes (cancel, dispatch, delivered, return) every
+        # 2 minutes instead of 5, so a change reaches ERPNext, and the portal,
+        # within minutes. Short windows, so each run is two searches; the
+        # hourly runs stay as the net, and Unicommerce's push notifications
+        # (api/nsm.py) make it immediate once they are switched on.
+        "*/2 * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.order.status.poll_recent_order_status",
             "alaiy_os_connector_unicommerce.unicommerce.order.status.poll_recent_shipping_status",
         ],
