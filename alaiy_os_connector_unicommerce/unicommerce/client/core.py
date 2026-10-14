@@ -177,14 +177,20 @@ class UnicommerceClient:
             if response.status_code == 403:
                 if endpoint not in self._forbidden_endpoints:
                     self._forbidden_endpoints.add(endpoint)
-                    frappe.log_error(
-                        title="Unicommerce: access denied (403)",
-                        message=(
+                    from alaiy_os_connector_unicommerce.unicommerce.log import log_once
+                    # Once a day across every worker, not once per process:
+                    # each scheduled job starts a fresh process, so the
+                    # in-memory set alone still wrote a row per run.
+                    log_once(
+                        "Unicommerce: access denied (403)",
+                        (
                             f"{endpoint}\n\n{cstr(response.text)[:1000]}\n\n"
                             "The Unicommerce API user lacks the access resource for this "
                             "endpoint. This is granted in Uniware, not fixable in code. "
-                            "Further 403s on this endpoint are suppressed for this run."
+                            "Further 403s on this endpoint are suppressed for a day."
                         ),
+                        key=f"403:{endpoint}",
+                        window=24 * 60 * 60,
                     )
                 return None, False
 

@@ -84,6 +84,13 @@ FULL_WINDOW_MINUTES = 24 * 60
 #: How long a package whose invoice could not be read waits before the pull asks again.
 INVOICE_RETRY_SECONDS = 60 * 60
 INVOICE_RETRY_KEY = "unicommerce_invoice_retry"
+#: How long to wait before the next attempt after the 1st, 2nd and later
+#: failures to read a package's invoice. A package that keeps failing is
+#: almost always a standing problem (a missing account permission), so it is
+#: tried less and less often instead of every hour for ever.
+INVOICE_RETRY_BACKOFF_SECONDS = (60 * 60, 6 * 60 * 60, 24 * 60 * 60)
+INVOICE_FAILURES_KEY = "unicommerce_invoice_failures"
+INVOICE_FAILURES_TTL_SECONDS = 30 * 24 * 60 * 60
 #: Slack added to the time since the last run, so an order updated just before
 #: that run started is still inside the narrow window of the next one.
 CHANGED_WINDOW_BUFFER_MINUTES = 10
@@ -244,6 +251,7 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
     this ran (9 real packages found stuck this way since 20 Aug)."""
     from alaiy_os_connector_unicommerce.unicommerce.client.invoicing import get_sales_invoice
     from alaiy_os_connector_unicommerce.unicommerce.fulfillment.invoice import INVOICED_STATE, create_sales_invoice
+    from alaiy_os_connector_unicommerce.unicommerce.log import log_once
 
     facility_code = sales_order.get(FACILITY_CODE_FIELD)
     mirror_eligible_states = INVOICED_STATE + ["RETURNED", "RETURN_EXPECTED", "RETURN_ACKNOWLEDGED"]
@@ -254,18 +262,27 @@ def _create_sales_invoices(unicommerce_order: dict, sales_order, client: Unicomm
             continue
         invoice_data = get_sales_invoice(client, shipping_package_code=package["code"], facility_code=facility_code)
         if not invoice_data or not invoice_data.get("invoice"):
-            # Retried once an hour, not on every pull: a package whose invoice cannot be read (missing
-            # permission, or not invoiced yet) used to cost an API call and an Error Log row every cycle.
-            frappe.cache().set_value(retry_key, 1, expires_in_sec=INVOICE_RETRY_SECONDS)
+            # Not retried on every pull, and less often each time it fails: a package whose invoice
+            # cannot be read (missing permission, or not invoiced yet) used to cost an API call and an
+            # Error Log row every cycle.
+            failures_key = f"{INVOICE_FAILURES_KEY}:{package['code']}"
+            failures = int(frappe.cache().get_value(failures_key) or 0) + 1
+            frappe.cache().set_value(failures_key, failures, expires_in_sec=INVOICE_FAILURES_TTL_SECONDS)
+            frappe.cache().set_value(
+                retry_key, 1,
+                expires_in_sec=INVOICE_RETRY_BACKOFF_SECONDS[min(failures, len(INVOICE_RETRY_BACKOFF_SECONDS)) - 1],
+            )
             # get_sales_invoice returns None on any API failure (e.g. the
             # account's Unicommerce API credentials lacking the invoice
             # detail resource scope) without logging anything itself --
             # skip cleanly here instead of crashing on invoice_data["invoice"]
             # with an opaque TypeError, same package retried next pull.
-            frappe.log_error(
-                title=f"Unicommerce: no invoice data for package {package['code']} (order {sales_order.name})",
-                message="get_sales_invoice returned no data -- check API credentials/permissions "
+            log_once(
+                f"Unicommerce: no invoice data for package {package['code']} (order {sales_order.name})",
+                "get_sales_invoice returned no data -- check API credentials/permissions "
                 "for the invoice details resource on this Unicommerce account.",
+                key=f"no-invoice:{package['code']}",
+                window=7 * 24 * 60 * 60,
             )
             continue
         try:

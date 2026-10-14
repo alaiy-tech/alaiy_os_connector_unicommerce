@@ -47,6 +47,7 @@ from frappe.utils import cint, flt
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.inventory import search_itemtype_with_inventory
 from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD, SETTINGS_DOCTYPE
+from alaiy_os_connector_unicommerce.unicommerce.log import log_once
 from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
 # Page size for itemType/search -- comfortably under any practical response
@@ -164,9 +165,14 @@ def _pull_warehouse(client, warehouse, facility_code):
         # facility's catalogue (multi-facility items, since-delisted items).
         # Logged as a warning so a real coverage regression is visible
         # without treating every run as an error.
-        frappe.log_error(
-            title=f"Unicommerce inventory pull: {len(missing_skus)} mapped SKUs not found in {warehouse}",
-            message=f"facility={facility_code}\nsample={list(missing_skus)[:50]}",
+        # Once a day per warehouse: the count in the title changes by one as
+        # items come and go, so keyed on the title alone it was a new row
+        # every run for the same standing condition.
+        log_once(
+            f"Unicommerce inventory pull: {len(missing_skus)} mapped SKUs not found in {warehouse}",
+            f"facility={facility_code}\nsample={list(missing_skus)[:50]}",
+            key=f"inventory-missing:{warehouse}",
+            window=24 * 60 * 60,
         )
 
     if not changes:
@@ -200,9 +206,13 @@ def _pull_warehouse(client, warehouse, facility_code):
             # live this loop has no such guard, so an early batch's failure
             # for ANY reason silently prevented every later batch for this
             # same warehouse from ever being attempted.
-            frappe.log_error(
-                title=f"Unicommerce inventory pull: batch reconciliation failed for {warehouse}",
-                message=frappe.get_traceback(),
+            trace = frappe.get_traceback()
+            log_once(
+                f"Unicommerce inventory pull: batch reconciliation failed for {warehouse}",
+                trace,
+                # The reason, not the whole traceback: the same standing
+                # failure (one item that cannot be reconciled) repeats every run.
+                key=f"inventory-batch:{warehouse}:{_last_line(trace)}",
             )
             continue
 
@@ -223,3 +233,8 @@ def _get_synced_items() -> dict:
         .run(as_dict=1)
     )
     return {row.sku: row.item_code for row in rows}
+
+
+def _last_line(text: str) -> str:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[-1][:200] if lines else ""
