@@ -16,7 +16,8 @@ from alaiy_os_connector_unicommerce.unicommerce.order.tracking import apply_orde
 from alaiy_os_connector_unicommerce.unicommerce.utils import get_unicommerce_datetime
 from alaiy_os_connector_unicommerce.unicommerce.order.cancellation import (
     check_and_update_customer_initiated_returns, create_rto_return, fully_cancel_orders,
-    sync_customer_initiated_returns, update_erpnext_order_items, update_partially_cancelled_orders,
+    sync_customer_initiated_returns, update_cancelled_items_on_completed_orders, update_erpnext_order_items,
+    update_partially_cancelled_orders,
 )
 
 PARTIAL_CANCELLED_STATES = ["PENDING_VERIFICATION", "CREATED", "PROCESSING"]
@@ -110,6 +111,16 @@ def update_sales_order_status(window_minutes: int | None = None):
         except Exception:
             frappe.log_error(
                 title="Unicommerce: update_partially_cancelled_orders failed", message=frappe.get_traceback()
+            )
+
+    completed = [d for d in valid_orders if d["status"] in RETURN_POSSIBLE_STATE]
+    if completed:
+        try:
+            update_cancelled_items_on_completed_orders(completed, client=client)
+        except Exception:
+            frappe.log_error(
+                title="Unicommerce: update_cancelled_items_on_completed_orders failed",
+                message=frappe.get_traceback(),
             )
 
     probable_returns = [d for d in valid_orders if d["status"] in RETURN_POSSIBLE_STATE]

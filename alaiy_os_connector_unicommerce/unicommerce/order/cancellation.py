@@ -253,6 +253,114 @@ def update_partially_cancelled_orders(orders, client) -> None:
             update_erpnext_order_items(so_data)
 
 
+#: An order already checked for cancelled items is not fetched again for this
+#: long: the status poll sees the same completed orders on every run.
+CANCEL_CHECK_KEY = "unicommerce_cancel_checked"
+CANCEL_CHECK_SECONDS = 6 * 60 * 60
+CANCEL_SWEEP_BATCH = 300
+CANCEL_SWEEP_DAYS = 60
+CANCEL_SWEEP_RECHECK_SECONDS = 30 * 24 * 60 * 60
+
+
+def _multi_item_order_codes(codes: list[str]) -> set[str]:
+    """Of these Unicommerce order codes, the ones whose local Sales Order has
+    more than one line. A completed order cannot be left with no item, so only
+    an order with several lines can be holding one that was cancelled."""
+    if not codes:
+        return set()
+    rows = frappe.db.sql(
+        f"""
+        SELECT so.{ORDER_CODE_FIELD}
+        FROM `tabSales Order` so
+        JOIN `tabSales Order Item` soi ON soi.parent = so.name
+        WHERE so.docstatus = 1 AND so.{ORDER_CODE_FIELD} IN %(codes)s
+        GROUP BY so.name
+        HAVING COUNT(*) > 1
+        """,
+        {"codes": tuple(codes)},
+    )
+    return {r[0] for r in rows}
+
+
+def _remove_cancelled_items_for(code: str, client, recheck_seconds: int) -> None:
+    from alaiy_os_connector_unicommerce.unicommerce.log import log_once
+
+    frappe.cache().set_value(f"{CANCEL_CHECK_KEY}:{code}", 1, expires_in_sec=recheck_seconds)
+    try:
+        so_data = get_sales_order(client, code)
+        if so_data:
+            update_erpnext_order_items(so_data)
+            # One order at a time, so a later failure's rollback cannot undo this one.
+            frappe.db.commit()
+    except Exception:
+        frappe.db.rollback()
+        log_once(
+            f"Unicommerce: could not remove cancelled items from order {code}",
+            frappe.get_traceback(),
+            key=f"cancelled-items:{code}",
+            window=24 * 60 * 60,
+        )
+
+
+def update_cancelled_items_on_completed_orders(orders, client) -> None:
+    """Remove items cancelled in Unicommerce from orders that have already
+    completed.
+
+    `update_partially_cancelled_orders` only looks at orders still being
+    processed, so an item cancelled after its order reached COMPLETE stayed on
+    the Sales Order and kept counting towards sales. Limited to orders with more
+    than one local line, and to once per order every few hours, so the
+    frequent status poll costs a handful of extra calls rather than one per
+    completed order."""
+    codes = [
+        o["code"] for o in _filter_recent_orders(orders)
+        if not frappe.cache().get_value(f"{CANCEL_CHECK_KEY}:{o['code']}")
+    ]
+    for code in _multi_item_order_codes(codes):
+        _remove_cancelled_items_for(code, client, CANCEL_CHECK_SECONDS)
+
+
+def catch_up_on_cancelled_items() -> dict:
+    """Daily pass over recent completed orders, for items cancelled before the
+    status poll started checking them.
+
+    Bounded and resumable like the other catch-ups: a fixed batch of the newest
+    unchecked multi-line orders each run, each remembered for a month once
+    looked at, so history clears over days and then costs one query a day."""
+    from frappe.utils import add_days, nowdate
+
+    from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
+
+    if not frappe.get_cached_doc("Unicommerce Connector Settings").is_enabled:
+        return {"skipped": "connector disabled"}
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT so.{ORDER_CODE_FIELD}
+        FROM `tabSales Order` so
+        JOIN `tabSales Order Item` soi ON soi.parent = so.name
+        WHERE so.docstatus = 1 AND so.{ORDER_STATUS_FIELD} = 'COMPLETE'
+          AND so.{ORDER_CODE_FIELD} IS NOT NULL AND so.{ORDER_CODE_FIELD} != ''
+          AND so.transaction_date >= %(since)s
+        GROUP BY so.name
+        HAVING COUNT(*) > 1
+        ORDER BY so.transaction_date DESC
+        LIMIT %(limit)s
+        """,
+        {"since": add_days(nowdate(), -CANCEL_SWEEP_DAYS), "limit": CANCEL_SWEEP_BATCH * 4},
+    )
+    cache = frappe.cache()
+    pending = [r[0] for r in rows if not cache.get_value(f"{CANCEL_CHECK_KEY}:{r[0]}")][:CANCEL_SWEEP_BATCH]
+    if not pending:
+        return {"checked": 0}
+
+    client = UnicommerceClient()
+    for code in pending:
+        _remove_cancelled_items_for(code, client, CANCEL_SWEEP_RECHECK_SECONDS)
+    frappe.db.commit()
+    return {"checked": len(pending)}
+
+
 def _filter_recent_orders(orders, time_limit=60 * 12):
     """Only consider orders updated within the last `time_limit` minutes."""
     check_timestamp = (datetime.utcnow().timestamp() - time_limit * 60) * 1000

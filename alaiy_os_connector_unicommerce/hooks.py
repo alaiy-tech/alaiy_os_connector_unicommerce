@@ -66,6 +66,12 @@ scheduler_events = {
         ],
     },
     "daily_long": [
+        # Items copied before their brand was set in Unicommerce never picked it
+        # up afterwards; fills in a blank brand only. See refresh_brand's docstring.
+        "alaiy_os_connector_unicommerce.unicommerce.product.refresh_brand.fill_missing_brands",
+        # Items cancelled inside an order that has already completed. Bounded and
+        # resumable; see catch_up_on_cancelled_items's docstring.
+        "alaiy_os_connector_unicommerce.unicommerce.order.cancellation.catch_up_on_cancelled_items",
         # Reads marketplace listing ids off orders that predate the mapping.
         # Self-limiting and resumable: it takes a fixed batch of the oldest
         # unread orders and stops, so it clears history over a couple of
