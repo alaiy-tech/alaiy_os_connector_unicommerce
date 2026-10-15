@@ -29,7 +29,9 @@ RECHECK_SECONDS = 24 * 60 * 60
 CHECKED_KEY = "unicommerce_brand_checked"
 
 
-def fill_missing_brands(limit: int = BATCH) -> dict:
+def fill_missing_brands(limit: int = BATCH, force: bool = False) -> dict:
+    """`force` ignores the one-day wait on items Unicommerce had no brand for,
+    for when a brand has just been set there and should be picked up now."""
     settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
     if not settings.is_enabled:
         return {"skipped": "connector disabled"}
@@ -42,7 +44,7 @@ def fill_missing_brands(limit: int = BATCH) -> dict:
         limit=limit * 3,
     )
     cache = frappe.cache()
-    pending = [sku for sku in dict.fromkeys(skus) if sku and not cache.get_value(f"{CHECKED_KEY}:{sku}")][:limit]
+    pending = [sku for sku in dict.fromkeys(skus) if sku and (force or not cache.get_value(f"{CHECKED_KEY}:{sku}"))][:limit]
     if not pending:
         return {"checked": 0, "filled": 0}
 
