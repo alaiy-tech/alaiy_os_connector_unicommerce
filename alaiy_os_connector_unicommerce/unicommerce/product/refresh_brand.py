@@ -73,3 +73,23 @@ def fill_missing_brands(limit: int = BATCH, force: bool = False) -> dict:
             )
     frappe.db.commit()
     return {"checked": len(pending), "filled": filled, "failed": failed}
+
+
+def show_brand(item_code: str) -> dict:
+    """Read-only: what this item holds locally and what Unicommerce says its
+    brand is, for finding out why a brand set there has not arrived.
+
+        bench --site <site> execute alaiy_os_connector_unicommerce.unicommerce.product.refresh_brand.show_brand --kwargs "{'item_code': 'KB12029-_XS-M_'}"
+    """
+    local = frappe.db.get_value(
+        "Item", item_code, ["name", "brand", ITEM_EXTERNAL_ID_FIELD], as_dict=True
+    )
+    if not local:
+        print(f"No local Item named {item_code}")
+        return {}
+    sku = local.get(ITEM_EXTERNAL_ID_FIELD)
+    print(f"Local item: {local.name}, brand={local.brand!r}, Unicommerce SKU we ask for: {sku!r}")
+    response = get_unicommerce_item(UnicommerceClient(), sku)
+    dto = (response or {}).get("itemTypeDTO") or {}
+    print(f"Unicommerce answered: found={bool(dto)}, skuCode={dto.get('skuCode')!r}, brand={dto.get('brand')!r}")
+    return {"local_brand": local.brand, "sku": sku, "uc_brand": dto.get("brand"), "found": bool(dto)}
