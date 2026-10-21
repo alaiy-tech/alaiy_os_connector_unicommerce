@@ -15,6 +15,9 @@ UNICOMMERCE_SKU_PATTERN = re.compile(r"[A-Za-z0-9._\-/]{3,45}")
 # Custom fields (matches setup/install.py:setup_custom_fields)
 ITEM_SYNC_CHECKBOX = "sync_to_unicommerce"
 ITEM_EXTERNAL_ID_FIELD = "unicommerce_external_id"
+# On Bin: stock Unicommerce has committed to open orders (its "blocked" quantity).
+# Bin.actual_qty holds the available quantity; available + blocked is the total on hand.
+BIN_BLOCKED_QTY_FIELD = "unicommerce_blocked_qty"
 ORDER_CODE_FIELD = "unicommerce_order_code"
 ORDER_DISPLAY_CODE_FIELD = "unicommerce_display_order_code"
 CHANNEL_ID_FIELD = "unicommerce_channel_id"

@@ -46,7 +46,9 @@ from frappe.utils import cint, flt
 
 from alaiy_os_connector_unicommerce.unicommerce.client import UnicommerceClient
 from alaiy_os_connector_unicommerce.unicommerce.client.inventory import search_itemtype_with_inventory
-from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD, SETTINGS_DOCTYPE
+from alaiy_os_connector_unicommerce.unicommerce.constants import (
+    BIN_BLOCKED_QTY_FIELD, ITEM_EXTERNAL_ID_FIELD, SETTINGS_DOCTYPE,
+)
 from alaiy_os_connector_unicommerce.unicommerce.log import log_once
 from alaiy_os_connector_unicommerce.unicommerce.utils import need_to_run
 
@@ -120,6 +122,10 @@ def _pull_warehouse(client, warehouse, facility_code):
     # latest value seen per item, which is what a reconciliation wants
     # anyway -- current stock, not a history of every page it appeared on.
     changes_by_item = {}
+    # Bin name -> blocked quantity, for Bins whose stored blocked figure differs.
+    # Skipped on a site that has not run the patch adding the field yet.
+    track_blocked = frappe.db.has_column("Bin", BIN_BLOCKED_QTY_FIELD)
+    blocked_changes = {}
     seen_skus = set()
     display_start = 0
     for _ in range(MAX_PAGES_PER_WAREHOUSE):
@@ -146,9 +152,14 @@ def _pull_warehouse(client, warehouse, facility_code):
             if snapshot is None:
                 continue
             new_qty = flt(snapshot.get("inventory"))
-            current_qty = flt(frappe.db.get_value(
-                "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
-            ) or 0)
+            bin_row = frappe.db.get_value(
+                "Bin", {"item_code": item_code, "warehouse": warehouse},
+                ["name", "actual_qty", BIN_BLOCKED_QTY_FIELD] if track_blocked else ["name", "actual_qty"],
+                as_dict=True,
+            )
+            current_qty = flt(bin_row.actual_qty) if bin_row else 0.0
+            if track_blocked and bin_row and flt(bin_row.get(BIN_BLOCKED_QTY_FIELD)) != flt(snapshot.get("inventoryBlocked")):
+                blocked_changes[bin_row.name] = flt(snapshot.get("inventoryBlocked"))
             if new_qty != current_qty:
                 changes_by_item[item_code] = {"item_code": item_code, "warehouse": warehouse, "qty": new_qty}
 
@@ -156,6 +167,11 @@ def _pull_warehouse(client, warehouse, facility_code):
         total_records = response.get("totalRecords") or 0
         if display_start >= total_records or not elements:
             break
+
+    # A column write, like the other read-only reporting fields: stock reconciliation
+    # sets the available quantity, and this figure has no document of its own.
+    for bin_name, blocked in blocked_changes.items():
+        frappe.db.set_value("Bin", bin_name, BIN_BLOCKED_QTY_FIELD, blocked, update_modified=False)
 
     changes = list(changes_by_item.values())
 

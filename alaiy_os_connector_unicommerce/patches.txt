@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 alaiy_os_connector_unicommerce.patches.add_sales_order_listings_checked
 alaiy_os_connector_unicommerce.patches.backfill_blank_sync_frequencies
+alaiy_os_connector_unicommerce.patches.add_bin_blocked_qty
