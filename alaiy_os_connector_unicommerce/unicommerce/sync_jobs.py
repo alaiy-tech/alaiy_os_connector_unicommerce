@@ -15,9 +15,16 @@ from frappe.utils import now_datetime, add_to_date
 # option, which silently disabled every scheduled sync.
 _MIN_INTERVAL_MINUTES = 1
 
+# How long a sync job may run before the worker stops it. The order pull gets
+# longer than the rest: a run killed at the limit never writes its finish time,
+# so the next run cannot narrow its window and repeats the same full-day work.
+_JOB_TIMEOUT_SECONDS = 600
+_PULL_JOB_TIMEOUT_SECONDS = 1800
+
 # A sync that has been "running" longer than this is treated as dead, so a
-# crashed job never blocks the schedule forever.
-_STALE_RUNNING_SECONDS = 1800
+# crashed job never blocks the schedule forever. Longer than the longest job
+# timeout, or a job still inside its limit would be started a second time.
+_STALE_RUNNING_SECONDS = _PULL_JOB_TIMEOUT_SECONDS + 600
 
 
 def check_and_enqueue():
@@ -127,4 +134,5 @@ def _maybe_enqueue(interval_setting, sync_type, enqueue_fn, interval_fieldname=N
     if last_success and now < add_to_date(last_success, minutes=interval_minutes):
         return
 
-    frappe.enqueue(enqueue_fn, queue="long", timeout=600, trigger="scheduled")
+    timeout = _PULL_JOB_TIMEOUT_SECONDS if sync_type == "pull" else _JOB_TIMEOUT_SECONDS
+    frappe.enqueue(enqueue_fn, queue="long", timeout=timeout, trigger="scheduled")
