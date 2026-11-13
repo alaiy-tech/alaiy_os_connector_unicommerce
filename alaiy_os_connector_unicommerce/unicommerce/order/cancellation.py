@@ -555,6 +555,166 @@ def create_cir_credit_note(so_data, return_data, client=None):
     credit_note.submit()
 
 
+def _returned_share(per_item: dict, returned_fraction: dict) -> float | None:
+    """The share of a tax that belongs to the returned part of an order.
+
+    `per_item` is the tax each invoice line carries and `returned_fraction` the part of each line that
+    came back (0 to 1). Returns None when the lines carry no tax to split."""
+    total = sum(per_item.values())
+    if not total:
+        return None
+    return sum(amount * returned_fraction.get(line, 0.0) for line, amount in per_item.items()) / total
+
+
+def _handle_partial_returns(credit_note, returned_items: list[str]) -> None:
+    """Drop non-returned items from the credit note and scale down its taxes to match."""
+    item_code_to_qty_map = defaultdict(float)
+    line_qty = {}
+    line_amount = {}
+    for item in credit_note.items:
+        item_code_to_qty_map[item.item_code] += item.qty
+        line_qty[item.sales_invoice_item] = abs(item.qty)
+        line_amount[item.sales_invoice_item] = abs(item.amount or 0)
+
+    credit_note.items = [item for item in credit_note.items if item.sales_invoice_item in returned_items]
+
+    returned_qty_map = defaultdict(float)
+    for item in credit_note.items:
+        returned_qty_map[item.item_code] += item.qty
+
+    if not credit_note.taxes:
+        return
+
+    if credit_note.taxes[0].meta.get_field("item_wise_tax_detail"):
+        # ERPNext before the item-wise tax table: the split sits on the tax row as JSON.
+        for tax in credit_note.taxes:
+            item_wise_tax_detail = json.loads(tax.item_wise_tax_detail)
+            new_tax_amt = 0.0
+
+            for item_code, tax_distribution in item_wise_tax_detail.items():
+                if not tax_distribution[1]:
+                    continue
+                return_percent = returned_qty_map.get(item_code, 0.0) / item_code_to_qty_map.get(item_code)
+                tax_distribution[1] *= return_percent
+                new_tax_amt += tax_distribution[1]
+
+            tax.tax_amount = new_tax_amt
+            tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
+        return
+
+    # ERPNext with the item-wise tax table (v16): the split is a table on the invoice, and the credit
+    # note's own copy is rebuilt on save from each tax row's amount, so what has to be right here is
+    # each tax row's amount. It is the invoice's amount for that row, signed as the credit note has it,
+    # times the share of the row's tax that sat on the returned part of each line.
+    returned_fraction = {
+        line: min(1.0, (abs(item.qty) / line_qty[item.sales_invoice_item]) if line_qty.get(item.sales_invoice_item) else 0.0)
+        for line, item in ((i.sales_invoice_item, i) for i in credit_note.items)
+    }
+    invoice = credit_note.get("return_against")
+    invoice_taxes = {t.idx: t.name for t in frappe.get_all(
+        "Sales Taxes and Charges", filters={"parent": invoice, "parenttype": "Sales Invoice"}, fields=["idx", "name"]
+    )} if invoice else {}
+    detail_rows = frappe.get_all(
+        "Item Wise Tax Detail",
+        filters={"parent": invoice, "parenttype": "Sales Invoice"},
+        fields=["item_row", "tax_row", "amount"],
+    ) if invoice else []
+    # The invoice's amount per line for the fallback, when it holds no per-item tax rows.
+    total_amount = sum(line_amount.values())
+    returned_amount = sum(
+        line_amount.get(line, 0.0) * fraction for line, fraction in returned_fraction.items()
+    )
+
+    for tax in credit_note.taxes:
+        tax_row = invoice_taxes.get(tax.idx)
+        per_item: dict = defaultdict(float)
+        for row in detail_rows:
+            if row.tax_row == tax_row and row.item_row:
+                per_item[row.item_row] += abs(row.amount or 0)
+        share = _returned_share(per_item, returned_fraction)
+        if share is None:
+            # No per-item tax on the invoice: split by value, which is exact when every line
+            # carries the same rate.
+            share = (returned_amount / total_amount) if total_amount else 0.0
+        tax.tax_amount = (tax.tax_amount or 0) * share
+        tax.item_wise_tax_detail = json.dumps(item_wise_tax_detail)
+
+    return credit_note
+
+
+def check_and_update_customer_initiated_returns(orders, client) -> None:
+    """Create a credit note for any customer-initiated return on recently changed orders."""
+    for order in _filter_recent_orders(orders):
+        try:
+            so_data = get_sales_order(client, order["code"])
+            if so_data:
+                sync_customer_initiated_returns(so_data, client=client)
+        except Exception:
+            frappe.log_error(
+                title=f"Unicommerce: customer-initiated return sync failed for order {order.get('code')}",
+                message=frappe.get_traceback(),
+            )
+            continue
+
+
+def sync_customer_initiated_returns(so_data, client=None):
+    customer_returns = [r for r in so_data.get("returns", []) if r["type"] == "Customer Returned"]
+    for customer_return in customer_returns:
+        existing = frappe.db.get_value("Sales Invoice", {RETURN_CODE_FIELD: customer_return["code"]})
+        if not existing:
+            create_cir_credit_note(so_data, customer_return, client=client)
+        elif client:
+            # Same self-heal as the RTO path: a credit note created before the
+            # return-detail fields existed is filled in on this sweep rather
+            # than staying blank for good.
+            _ensure_return_details(
+                existing, client,
+                package_code=customer_return.get("code"),
+                reverse_pickup_code=customer_return.get("reversePickupCode"),
+                return_type="CUSTOMER_RETURN",
+            )
+
+
+def create_cir_credit_note(so_data, return_data, client=None):
+    sales_order_name = frappe.db.get_value("Sales Order", {ORDER_CODE_FIELD: so_data["code"]})
+    so = frappe.get_doc("Sales Order", sales_order_name)
+
+    # map SO item -> SI item via the linked child row
+    so_item_code_map = {item.get(ORDER_ITEM_CODE_FIELD): item.name for item in so.items}
+
+    invoice_name = frappe.db.get_value("Sales Invoice", {ORDER_CODE_FIELD: so_data["code"], "is_return": 0})
+    if not invoice_name:
+        # Same shape as create_rto_return's missing-invoice check -- a
+        # customer return on an order that was never invoiced locally has
+        # nothing to attach a credit note to.
+        frappe.log_error(
+            title="Unicommerce: customer return has no local Sales Invoice",
+            message=f"Order {so_data['code']} has a Customer Returned return but no non-return "
+                    f"Sales Invoice exists locally -- it was likely never invoiced.",
+        )
+        return
+    si = frappe.get_doc("Sales Invoice", invoice_name)
+    so_si_item_map = {item.so_detail: item.name for item in si.items}
+
+    credit_note = create_credit_note(si.name)
+    credit_note.set(TRACKING_CODE_FIELD, return_data.get("trackingNumber"))
+    credit_note.set(SHIPPING_PROVIDER_CODE, return_data.get("shippingProvider"))
+    apply_return_details(
+        credit_note, client, credit_note.get(FACILITY_CODE_FIELD), "CUSTOMER_RETURN",
+        shipment_code=return_data.get("code"),
+        reverse_pickup_code=return_data.get("reversePickupCode"),
+    )
+
+    returned_so_codes = [item.get("saleOrderItemCode") for item in return_data.get("returnItems")]
+    returned_si_items = [so_si_item_map.get(so_item_code_map.get(code)) for code in returned_so_codes]
+
+    if set(returned_si_items) != set(so_si_item_map.values()):
+        _handle_partial_returns(credit_note, returned_si_items)
+
+    credit_note.save()
+    credit_note.submit()
+
+
 def _handle_partial_returns(credit_note, returned_items: list[str]) -> None:
     """Drop non-returned items from the credit note and scale down its taxes to match."""
     item_code_to_qty_map = defaultdict(float)
