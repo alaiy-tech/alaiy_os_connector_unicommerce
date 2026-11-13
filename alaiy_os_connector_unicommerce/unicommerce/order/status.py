@@ -381,6 +381,81 @@ def catch_up_on_stale_orders():
     return {"orders": len(stale_orders), "processed": processed, "failed": failed}
 
 
+def refresh_old_order_statuses(
+    brand: str | None = None, channels: list[str] | None = None, min_age_days: int = 60,
+    recheck_after_days: int = 1, batch_size: int = STALE_ORDER_BATCH,
+):
+    """Re-read from Unicommerce the status of orders placed `min_age_days` or more ago.
+
+    An order's status can still move long after it is placed (a return, an RTO, a late
+    cancellation), and the pollers only ask about orders Unicommerce reports as updated
+    in the last day or two. catch_up_on_stale_orders reaches old orders too, but across
+    the whole book on a 14 day cycle; this one is for a named brand or channels that need
+    their old orders re-read daily. An order read within `recheck_after_days` is skipped,
+    so a daily run walks forward through the orders instead of re-reading the same ones.
+    Cancelled orders are left out: a cancellation does not reverse.
+
+    Applies exactly what catch_up_on_stale_orders applies (status, tracking, cancellation,
+    customer returns, RTO), so the sync paths stay the single writer of this data.
+    """
+    settings = frappe.get_cached_doc(SETTINGS_DOCTYPE)
+    if not settings.is_enabled:
+        return {"skipped": "connector not enabled"}
+
+    conditions = [
+        "so.docstatus = 1",
+        f"so.`{ORDER_CODE_FIELD}` IS NOT NULL AND so.`{ORDER_CODE_FIELD}` != ''",
+        f"COALESCE(NULLIF(so.`{ORDER_STATUS_FIELD}`, ''), '') != 'CANCELLED'",
+        "so.transaction_date <= DATE_SUB(CURDATE(), INTERVAL %(min_age)s DAY)",
+        "so.modified < DATE_SUB(NOW(), INTERVAL %(recheck)s DAY)",
+    ]
+    params = {"min_age": min_age_days, "recheck": recheck_after_days, "batch_size": batch_size}
+    join = ""
+    if brand:
+        join = (
+            "JOIN (SELECT DISTINCT soi.parent FROM `tabSales Order Item` soi "
+            "JOIN `tabItem` itm ON itm.name = soi.item_code WHERE itm.brand = %(brand)s) b ON b.parent = so.name"
+        )
+        params["brand"] = brand
+    if channels:
+        conditions.append("so.unicommerce_channel_id IN %(channels)s")
+        params["channels"] = tuple(channels)
+
+    orders = frappe.db.sql(
+        f"""
+        SELECT so.name, so.`{ORDER_CODE_FIELD}` AS order_code
+        FROM `tabSales Order` so {join}
+        WHERE {' AND '.join(conditions)}
+        ORDER BY so.modified ASC
+        LIMIT %(batch_size)s
+        """,
+        params, as_dict=True,
+    )
+    if not orders:
+        return {"orders": 0, "processed": 0, "failed": 0}
+
+    client = UnicommerceClient()
+    processed = failed = 0
+    for row in orders:
+        try:
+            so_data = get_sales_order(client, row.order_code)
+            if so_data:
+                _apply_stale_order(row.name, so_data, client)
+            else:
+                # Stamp it as read so an order Unicommerce returns nothing for is not asked again every run.
+                frappe.db.set_value("Sales Order", row.name, ORDER_STATUS_FIELD,
+                                    frappe.db.get_value("Sales Order", row.name, ORDER_STATUS_FIELD))
+            processed += 1
+            frappe.db.commit()
+        except Exception:
+            failed += 1
+            frappe.log_error(
+                title=f"Unicommerce: old-order status refresh failed for {row.name}",
+                message=frappe.get_traceback(),
+            )
+    return {"orders": len(orders), "processed": processed, "failed": failed}
+
+
 def _apply_stale_order(so_name, so_data, client):
     """One stale order's worth of what update_sales_order_status /
     update_shipping_package_status do for a freshly-polled one -- status
