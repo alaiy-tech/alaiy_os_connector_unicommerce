@@ -77,3 +77,30 @@ def run(days: int = 5):
     print(f"\nstatus differs on {sum(differ.values())} shared orders:", flush=True)
     for k, n in differ.most_common(10):
         print(f"  {k}: {n}", flush=True)
+
+
+def inspect(code: str):
+    """Read-only: fetch one order from Unicommerce and say whether the pull could import it.
+
+      bench --site <site> execute alaiy_os_connector_unicommerce.unicommerce.verify_recent.inspect \
+        --kwargs "{'code': '<order code>'}"
+
+    Prints the order's status, channel and placed time, whether the channel is enabled locally, and
+    each line's SKU with whether a matching Item exists. No customer fields are printed."""
+    from alaiy_os_connector_unicommerce.unicommerce.client.orders import get_sales_order
+    from alaiy_os_connector_unicommerce.unicommerce.constants import ITEM_EXTERNAL_ID_FIELD
+
+    order = get_sales_order(UnicommerceClient(), code)
+    if not order:
+        print("get_sales_order returned nothing for this code: the pull skips it without logging.", flush=True)
+        return
+    channel = order.get("channel")
+    print("status:", order.get("status"), "| channel:", channel,
+          "| placed:", order.get("displayOrderDateTime"), "| existing locally:",
+          bool(frappe.db.exists("Sales Order", {ORDER_CODE_FIELD: code})), flush=True)
+    print("channel enabled locally:", frappe.db.get_value("Unicommerce Channel", channel, "enabled"), flush=True)
+    for line in order.get("saleOrderItems") or []:
+        sku = line.get("itemSku")
+        print(" line:", sku, "| item in portal:",
+              bool(frappe.db.get_value("Item", {ITEM_EXTERNAL_ID_FIELD: sku}, "name")),
+              "| line status:", line.get("statusCode"), flush=True)
