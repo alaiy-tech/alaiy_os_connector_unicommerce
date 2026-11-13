@@ -37,33 +37,37 @@ def run(days: int = 5):
             continue
         for e in elements:
             uc[e.get("code")] = {"day": str(day), "status": e.get("status"), "channel": e.get("channel")}
+    # Unicommerce files an order under the day it was created there; the portal files it under the
+    # day the channel placed it, which can be much earlier. So an order is looked up by code on any
+    # date, not only within these days.
+    codes = tuple(uc) or ("",)
     portal_rows = frappe.db.sql(
         f"""
         SELECT `{ORDER_CODE_FIELD}` AS code, transaction_date AS day, docstatus, `{ORDER_STATUS_FIELD}` AS status
         FROM `tabSales Order`
-        WHERE transaction_date >= %(first)s AND `{ORDER_CODE_FIELD}` IS NOT NULL AND `{ORDER_CODE_FIELD}` != ''
+        WHERE `{ORDER_CODE_FIELD}` IN %(codes)s
         """,
-        {"first": first}, as_dict=True,
+        {"codes": codes}, as_dict=True,
     )
     portal = {r.code: r for r in portal_rows}
 
-    per_day = defaultdict(lambda: [0, 0])
+    per_day = defaultdict(lambda: [0, 0, 0])
     for code, v in uc.items():
         per_day[v["day"]][0] += 1
-    for r in portal_rows:
-        per_day[str(r.day)][1] += 1
-    print("\nday            unicommerce  portal", flush=True)
+        if code in portal:
+            per_day[v["day"]][1] += 1
+        if code in portal and str(portal[code].day) != v["day"]:
+            per_day[v["day"]][2] += 1
+    print("day (Unicommerce)   unicommerce  in portal  of which filed under another day", flush=True)
     for day in sorted(per_day):
-        print(f"{day}   {per_day[day][0]:>10}  {per_day[day][1]:>6}", flush=True)
+        print(f"{day}        {per_day[day][0]:>10}  {per_day[day][1]:>9}  {per_day[day][2]:>6}", flush=True)
 
     missing = sorted(set(uc) - set(portal))
-    extra = sorted(set(portal) - set(uc))
-    print(f"\nin Unicommerce, not in the portal: {len(missing)}", flush=True)
+    print(f"\nin Unicommerce, not in the portal on any date: {len(missing)}", flush=True)
     print("  by status:", dict(Counter(uc[c]["status"] for c in missing).most_common()), flush=True)
     print("  by channel:", dict(Counter(uc[c]["channel"] for c in missing).most_common()), flush=True)
+    print("  by day:", dict(sorted(Counter(uc[c]["day"] for c in missing).items())), flush=True)
     print("  sample:", missing[:SAMPLE], flush=True)
-    print(f"in the portal, not in Unicommerce's list for these days: {len(extra)}", flush=True)
-    print("  sample:", extra[:SAMPLE], flush=True)
 
     differ = Counter()
     for code in set(uc) & set(portal):
