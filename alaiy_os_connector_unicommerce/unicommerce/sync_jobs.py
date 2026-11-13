@@ -99,15 +99,17 @@ def _close_dead_runs(sync_type):
     A worker that is stopped (restart, timeout, crash) never reaches the line that records its
     end, so its row stays "running" for ever. Those rows made the log read as if a sync were in
     progress when none was, and hid that no run had finished for a day."""
+    # The cutoff is worked out here, on the site's clock: the database's own NOW() runs in a different
+    # time zone from the one these timestamps are stored in, so comparing in SQL closed nothing.
+    now = now_datetime()
     frappe.db.sql(
         """
         UPDATE `tabUnicommerce Sync Log`
-        SET status = 'failed', finished_at = NOW(),
+        SET status = 'failed', finished_at = %(now)s,
             error_message = 'The job did not record an end; its worker was stopped or timed out.'
-        WHERE sync_type = %(sync_type)s AND status = 'running'
-          AND started_at < DATE_SUB(NOW(), INTERVAL %(seconds)s SECOND)
+        WHERE sync_type = %(sync_type)s AND status = 'running' AND started_at < %(cutoff)s
         """,
-        {"sync_type": sync_type, "seconds": _STALE_RUNNING_SECONDS},
+        {"sync_type": sync_type, "now": now, "cutoff": add_to_date(now, seconds=-_STALE_RUNNING_SECONDS)},
     )
     frappe.db.commit()
 
