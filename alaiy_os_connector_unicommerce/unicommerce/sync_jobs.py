@@ -93,6 +93,25 @@ def _interval_default(fieldname: str | None) -> str | None:
     return field.default if field else None
 
 
+def _close_dead_runs(sync_type):
+    """Mark as failed any run still "running" past the dead-job threshold.
+
+    A worker that is stopped (restart, timeout, crash) never reaches the line that records its
+    end, so its row stays "running" for ever. Those rows made the log read as if a sync were in
+    progress when none was, and hid that no run had finished for a day."""
+    frappe.db.sql(
+        """
+        UPDATE `tabUnicommerce Sync Log`
+        SET status = 'failed', finished_at = NOW(),
+            error_message = 'The job did not record an end; its worker was stopped or timed out.'
+        WHERE sync_type = %(sync_type)s AND status = 'running'
+          AND started_at < DATE_SUB(NOW(), INTERVAL %(seconds)s SECOND)
+        """,
+        {"sync_type": sync_type, "seconds": _STALE_RUNNING_SECONDS},
+    )
+    frappe.db.commit()
+
+
 def _maybe_enqueue(interval_setting, sync_type, enqueue_fn, interval_fieldname=None):
     try:
         interval_minutes = int(interval_setting)
@@ -113,6 +132,8 @@ def _maybe_enqueue(interval_setting, sync_type, enqueue_fn, interval_fieldname=N
         return
 
     now = now_datetime()
+
+    _close_dead_runs(sync_type)
 
     # Skip if a (non-stale) job is already running for this sync type.
     running = frappe.db.get_value(

@@ -51,6 +51,10 @@ scheduler_events = {
         "* * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.sync_jobs.check_and_enqueue"
         ],
+        # Checks the order pull is finishing and the portal holds what Unicommerce lists.
+        "*/10 * * * *": [
+            "alaiy_os_connector_unicommerce.unicommerce.watchdog.check"
+        ],
         "*/5 * * * *": [
             "alaiy_os_connector_unicommerce.unicommerce.fulfillment.delivery_note.prepare_delivery_note",
             "alaiy_os_connector_unicommerce.unicommerce.inventory.pull.pull_inventory_from_unicommerce",

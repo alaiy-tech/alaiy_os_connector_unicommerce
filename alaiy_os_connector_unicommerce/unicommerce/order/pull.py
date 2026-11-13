@@ -3,6 +3,7 @@
 """Unicommerce -> Alaiy OS order sync."""
 
 import json
+import time
 from collections import Counter
 from collections.abc import Iterator
 from typing import Any, NewType
@@ -95,6 +96,12 @@ INVOICE_FAILURES_TTL_SECONDS = 30 * 24 * 60 * 60
 #: that run started is still inside the narrow window of the next one.
 CHANGED_WINDOW_BUFFER_MINUTES = 10
 MIN_CHANGED_WINDOW_MINUTES = 15
+#: How long a pull spends re-reading orders it already holds, counted from the start of the run.
+#: Orders it has never seen are always imported first and are not limited. The re-reads only keep
+#: an existing order's status and invoice current, which the status pollers also do, so cutting them
+#: short costs nothing but lets the run finish inside its time limit and record that it did; a run
+#: that is killed never records it, and then every later run re-reads the whole day again.
+REREAD_BUDGET_SECONDS = 15 * 60
 
 
 def _changed_since_minutes(previous_run, now) -> int:
@@ -214,7 +221,12 @@ def _get_new_orders(
 
     # Stable sort: False (unseen) sorts before True, and each group keeps
     # Unicommerce's own ordering within it.
+    started = time.monotonic()
+    skipped_rereads = 0
     for order in sorted(to_fetch, key=lambda o: o["code"] in local_status):
+        if order["code"] in local_status and time.monotonic() - started > REREAD_BUDGET_SECONDS:
+            skipped_rereads += 1
+            continue
         # Re-fetch the full order (search results are summaries) -- if a
         # sales invoice failed to generate for some reason and got skipped,
         # this needs to be re-fetched and retried, not assumed already done.
@@ -226,6 +238,14 @@ def _get_new_orders(
     # fully drained will not reach this -- acceptable, since every caller
     # iterates it to exhaustion and a partial count is worse than none.
     report_skipped(skipped)
+    if skipped_rereads:
+        from alaiy_os_connector_unicommerce.unicommerce.log import log_once
+
+        log_once(
+            "Unicommerce: order pull stopped re-reading held orders at its time budget",
+            f"{skipped_rereads:,} held orders were left for the next run; new orders were all imported first.",
+            key="pull-reread-budget", window=60 * 60,
+        )
 
 
 def _create_sales_invoices(unicommerce_order: dict, sales_order, client: UnicommerceClient):
