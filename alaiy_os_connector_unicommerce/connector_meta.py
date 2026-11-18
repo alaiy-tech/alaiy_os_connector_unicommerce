@@ -3,6 +3,31 @@ Single source of truth for this connector's registration metadata.
 Consumed by setup/install.py → upserted into alaiy_os's OS Connector Registry.
 """
 
+# Columns of Unicommerce Sync Log, named the way the Connector Health page reads them.
+_LOG_FIELDS = {
+    "processed": "items_processed",
+    "changed": ["items_created", "items_updated"],
+    "failed": "items_failed",
+    "error": "error_message",
+}
+
+
+def _health(key, label, sync_type, interval_setting, direction="pull"):
+    # Each of these can legitimately have nothing to do, so zero-row runs are not a warning.
+    return {
+        "key": key,
+        "label": label,
+        "direction": direction,
+        "log_doctype": "Unicommerce Sync Log",
+        "log_filter": {"sync_type": sync_type},
+        "fields": _LOG_FIELDS,
+        "interval_setting": interval_setting,
+        "interval_unit": "min",
+        "scheduled": True,
+        "expects_rows": False,
+    }
+
+
 connector_meta = {
     "connector_id": "unicommerce",
     "connector_name": "Unicommerce",
@@ -23,4 +48,12 @@ connector_meta = {
     "sync_items_label": "Push",
     "is_enabled": 0,
     "connection_status": "untested",
+    "health": [
+        _health("orders", "Order pull", "pull", "order_sync_frequency"),
+        # Item push, B2B orders and purchase orders/GRN share the order and PO intervals.
+        _health("items_push", "Item push", "push", "order_sync_frequency", "push"),
+        _health("b2b", "B2B order pull", "b2b", "order_sync_frequency"),
+        _health("purchase_orders", "Purchase order sync", "purchase_order", "po_sync_frequency"),
+        _health("grn", "GRN sync", "grn", "po_sync_frequency"),
+    ],
 }
